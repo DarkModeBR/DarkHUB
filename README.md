@@ -141,7 +141,7 @@
 **2.** Cole o loadstring abaixo no executor:
 
 ```lua
-loadstring(game:HttpGet("URL_DO_SEU_RAW_AQUI"))()
+loadstring(game:HttpGet("https://raw.githubusercontent.com/DarkModeBR/DarkHUB/main/DarkHUB.lua"))()
 ```
 
 **3.** Execute e o menu abrirá automaticamente.
@@ -182,22 +182,6 @@ O DarkHUB implementa diversas técnicas para reduzir a detectabilidade:
 - **Proteção da GUI** — tentativa automática de mover o menu para `gethui()` / `CoreGui` com `syn.protect_gui` quando disponível
 - **HTTP Interceptor** — bloqueia requisições HTTP de scripts de detecção para servidores externos
 - **Spoof de `__tostring`** — impede identificação de hooks via inspeção do ambiente
-
----
-
-## 📋 Estrutura do Projeto
-
-```
-DarkHUB/
-├── DarkHUB.lua      # Script principal (auto-suficiente)
-└── Example.lua      # Exemplo de uso da biblioteca Fluent UI
-```
-
----
-
-## ⚠️ Aviso Legal
-
-> Este projeto é disponibilizado **apenas para fins educacionais**. O uso de scripts de terceiros em jogos pode violar os Termos de Serviço da plataforma. O autor não se responsabiliza pelo uso indevido deste software. Use com responsabilidade.
 
 ---
 
