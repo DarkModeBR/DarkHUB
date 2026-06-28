@@ -8,25 +8,68 @@ local VirtualUser      = game:GetService("VirtualUser")
 local TeleportService  = game:GetService("TeleportService")
 local HttpService      = game:GetService("HttpService")
 local Lighting         = game:GetService("Lighting")
+local Stats            = game:GetService("Stats")
 local Camera           = workspace.CurrentCamera
 local LocalPlayer      = Players.LocalPlayer
 local Options          = Fluent.Options
 
--- Stealth: IDs únicos por sessão para evitar fingerprint de nomes fixos
+local Booted = false
+local function notify(o) if Booted then Fluent:Notify(o) end end
+
+local protectHumanoid, protectHRP
+local Mouse = LocalPlayer:GetMouse()
+local getSilentTarget
+
+local F = {
+    speed = false, noclip = false, fly = false,
+    antiKickBan = false, remoteBlock = false,
+    silentAim = false,
+}
+
 local _RC = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 local function _RS(n)
     local t = {}
-    for i = 1, n do t[i] = _RC:sub(math.random(1, #_RC), math.random(1, #_RC)) end
+    for i = 1, n do local r = math.random(1, #_RC); t[i] = _RC:sub(r, r) end
     return table.concat(t)
 end
-local _TAG     = _RS(7)          -- prefixo único de instâncias criadas
-local _GLS     = "_" .. _RS(13) -- key getgenv para loadstring original
-local _GRQ     = "_" .. _RS(13) -- key getgenv para require original
-local _BRKJIT  = math.random(370, 620) -- intervalo de re-scan com jitter
-local _FF_NAME = _TAG .. _RS(4) -- nome do ForceField (ex: "XqkRpmWrtZ")
-local _BB_NAME = _TAG .. _RS(4) -- nome do BillboardGui
-local _BV_NAME = _TAG .. _RS(4) -- nome do BodyVelocity
-local _BG_NAME = _TAG .. _RS(4) -- nome do BodyGyro
+local _TAG     = _RS(7)
+local _GLS     = "_" .. _RS(13)
+local _GRQ     = "_" .. _RS(13)
+local _BB_NAME = _TAG .. _RS(4)
+local _BV_NAME = _TAG .. _RS(4)
+local _BG_NAME = _TAG .. _RS(4)
+
+local function opt(k) local o = Options[k]; return o and o.Value end
+local function getChar() return LocalPlayer.Character end
+local function getHRP() local c = getChar(); return c and c:FindFirstChild("HumanoidRootPart") end
+local function getHum() local c = getChar(); return c and c:FindFirstChildOfClass("Humanoid") end
+
+local function disconnectAll(t)
+    for _, c in ipairs(t) do pcall(function() c:Disconnect() end) end
+    table.clear(t)
+end
+
+local function playerList()
+    local list = {}
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer then list[#list + 1] = p.Name end
+    end
+    return #list > 0 and list or { "(none)" }
+end
+
+local function httpGet(url)
+    local fn = (syn and syn.request) or (http and http.request) or http_request or request
+    if fn then
+        local ok, res = pcall(fn, { Url = url, Method = "GET" })
+        if ok and res and res.Body then return res.Body end
+    end
+    return game:HttpGet(url)
+end
+
+local preExistingGuis = {}
+pcall(function()
+    for _, g in ipairs(LocalPlayer.PlayerGui:GetChildren()) do preExistingGuis[g] = true end
+end)
 
 local Window = Fluent:CreateWindow({
     Title       = "DarkHUB",
@@ -39,52 +82,31 @@ local Window = Fluent:CreateWindow({
 })
 Fluent:ToggleTransparency(false)
 
--- Tentar proteger/mover a GUI do menu para evitar varreduras de AC
-task.defer(function()
+local function protectGui()
     pcall(function()
         local hui = pcall(function() return gethui() end) and gethui()
         for _, g in ipairs(LocalPlayer.PlayerGui:GetChildren()) do
-            pcall(function()
-                if syn and syn.protect_gui then syn.protect_gui(g) end
-                if protect_gui then protect_gui(g) end
-                if hui then g.Parent = hui end
-            end)
+            if not preExistingGuis[g] then
+                pcall(function()
+                    if syn and syn.protect_gui then syn.protect_gui(g) end
+                    if protect_gui then protect_gui(g) end
+                    if hui then g.Parent = hui end
+                end)
+            end
         end
     end)
-end)
+end
 
 local Tabs = {
-    ESP      = Window:AddTab({ Title = "ESP",            Icon = "eye"        }),
-    Movement = Window:AddTab({ Title = "Movement",       Icon = "move"       }),
-    World    = Window:AddTab({ Title = "World",          Icon = "sun"        }),
-    Player   = Window:AddTab({ Title = "Player",         Icon = "user"       }),
-    Bypass   = Window:AddTab({ Title = "Bypass",         Icon = "shield-off" }),
-    Fling    = Window:AddTab({ Title = "Fling",          Icon = "swords"     }),
-    External = Window:AddTab({ Title = "External Tools", Icon = "package"    }),
-    Settings = Window:AddTab({ Title = "Settings",       Icon = "settings"   }),
+    Player   = Window:AddTab({ Title = "Player",   Icon = "user"     }),
+    Movement = Window:AddTab({ Title = "Movement", Icon = "move"     }),
+    Visuals  = Window:AddTab({ Title = "Visuals",  Icon = "eye"      }),
+    Combat   = Window:AddTab({ Title = "Combat",   Icon = "swords"   }),
+    Fling    = Window:AddTab({ Title = "Fling",    Icon = "wind"     }),
+    Bypass   = Window:AddTab({ Title = "Bypass",   Icon = "shield"   }),
+    External = Window:AddTab({ Title = "External", Icon = "package"  }),
+    Settings = Window:AddTab({ Title = "Settings", Icon = "settings" }),
 }
-
-local function opt(key)
-    local o = Options[key]
-    return o and o.Value
-end
-
-local function getChar() return LocalPlayer.Character end
-local function getHRP()  local c = getChar(); return c and c:FindFirstChild("HumanoidRootPart") end
-local function getHum()  local c = getChar(); return c and c:FindFirstChildOfClass("Humanoid") end
-
-local function disconnectAll(t)
-    for _, c in ipairs(t) do c:Disconnect() end
-    table.clear(t)
-end
-
-local function playerList()
-    local list = {}
-    for _, p in ipairs(Players:GetPlayers()) do
-        if p ~= LocalPlayer then list[#list + 1] = p.Name end
-    end
-    return #list > 0 and list or { "(none)" }
-end
 
 local BAN_PATS = {
     "ban","banned","bancheck","checkban","isban","banstatus","banplayer","tempban","permban",
@@ -148,8 +170,6 @@ local EXECUTOR_GLOBALS = {
     "readfile","writefile","appendfile","delfile","listfiles","isfile","isfolder","makefolder","delfolder",
     "request","http_request","websocket","cloneref","compareinstances","Drawing","cleardrawcache","isrenderobj",
 }
-
--- URLs suspeitas que ACs usam para reportar ou verificar
 local AC_URL_PATS = {
     "anticheat","exploit","cheatreport","hackdetect","moderation/report","bancheck","trustcheck",
 }
@@ -164,11 +184,9 @@ local function matchesList(name, list)
     end
     return false
 end
-
-local matchesAC   = function(n) return matchesList(n, AC_PATS)   end
-local matchesBan  = function(n) return matchesList(n, BAN_PATS)  end
-local matchesKick = function(n) return matchesList(n, KICK_PATS) end
-
+local function matchesAC(n)   return matchesList(n, AC_PATS)   end
+local function matchesBan(n)  return matchesList(n, BAN_PATS)  end
+local function matchesKick(n) return matchesList(n, KICK_PATS) end
 local function matchesACUrl(url)
     if type(url) ~= "string" then return false end
     local u = url:lower()
@@ -260,7 +278,6 @@ end
 
 local acMonitorConns   = {}
 local breakerConns     = {}
-local antiBanKickConns = {}
 
 local function startACMonitor()
     disconnectAll(acMonitorConns)
@@ -285,23 +302,12 @@ local function startBreakerMonitor()
     disconnectAll(breakerConns)
     breakerConns[1] = game.DescendantAdded:Connect(function(v)
         if not opt("ACBreakerEnabled") then return end
-        pcall(function()
-            local n = v.Name
-            if v:IsA("LocalScript") or v:IsA("Script") then
-                if matchesAC(n) or matchesBan(n) or matchesKick(n) then task.wait(); nukeInstance(v, _statsDummy) end
-            elseif v:IsA("RemoteEvent") or v:IsA("RemoteFunction") or v:IsA("BindableEvent") or v:IsA("BindableFunction") then
-                if matchesAC(n) or matchesBan(n) or matchesKick(n) then nukeInstance(v, _statsDummy) end
-            end
-        end)
-    end)
-    local tick    = 0
-    local curLimit = _BRKJIT
-    breakerConns[2] = RunService.Heartbeat:Connect(function()
-        tick += 1
-        if tick < curLimit then return end
-        tick = 0
-        curLimit = math.random(370, 620) -- re-jitter a cada ciclo
-        if opt("ACBreakerEnabled") then task.spawn(runFullScan) end
+        if not (v:IsA("LocalScript") or v:IsA("Script") or v:IsA("RemoteEvent")
+            or v:IsA("RemoteFunction") or v:IsA("BindableEvent") or v:IsA("BindableFunction")) then return end
+        local n = v.Name
+        if matchesAC(n) or matchesBan(n) or matchesKick(n) then
+            task.spawn(function() task.wait(); nukeInstance(v, _statsDummy) end)
+        end
     end)
 end
 
@@ -316,7 +322,7 @@ local function destroyKickBanRemotes()
                     if v:IsA("RemoteEvent") or v:IsA("RemoteFunction") or v:IsA("BindableEvent") or v:IsA("BindableFunction") then
                         if matchesKick(v.Name) or matchesBan(v.Name) then
                             if v:IsA("RemoteEvent")    then disableSignal(v.OnClientEvent) end
-                            if v:IsA("BindableEvent")  then disableSignal(v.Event)         end
+                            if v:IsA("BindableEvent")  then disableSignal(v.Event) end
                             if v:IsA("RemoteFunction") then pcall(function() v.OnClientInvoke = function() return nil end end) end
                             v:Destroy(); removed += 1
                         end
@@ -327,25 +333,6 @@ local function destroyKickBanRemotes()
     end
     return removed
 end
-
-local function startAntiBanKickMonitor()
-    disconnectAll(antiBanKickConns)
-    antiBanKickConns[1] = game.DescendantAdded:Connect(function(v)
-        if not opt("AntiKickBanEnabled") then return end
-        pcall(function()
-            if v:IsA("RemoteEvent") or v:IsA("RemoteFunction") or v:IsA("BindableEvent") or v:IsA("BindableFunction") then
-                if matchesKick(v.Name) or matchesBan(v.Name) then
-                    if v:IsA("RemoteEvent")    then disableSignal(v.OnClientEvent) end
-                    if v:IsA("BindableEvent")  then disableSignal(v.Event)         end
-                    if v:IsA("RemoteFunction") then pcall(function() v.OnClientInvoke = function() return nil end end) end
-                    pcall(function() v:Destroy() end)
-                end
-            end
-        end)
-    end)
-end
-
-local function stopAntiBanKickMonitor() disconnectAll(antiBanKickConns) end
 
 local function runGameBypass()
     local wiped, spoofed = 0, 0
@@ -365,8 +352,6 @@ local function runGameBypass()
         for name, fn in pairs(spoofFns) do
             pcall(function() env[name] = newcclosure(fn); spoofed += 1 end)
         end
-
-        -- Usar keys aleatórias de sessão para não deixar "_DH_origLS" como fingerprint
         local origLS = rawget(env, _GLS) or loadstring
         rawset(env, _GLS, origLS)
         env.loadstring = newcclosure(function(src, chunk)
@@ -378,7 +363,6 @@ local function runGameBypass()
             end
             return origLS(src, chunk)
         end)
-
         local origReq = rawget(env, _GRQ) or require
         rawset(env, _GRQ, origReq)
         env.require = newcclosure(function(module, ...)
@@ -388,7 +372,6 @@ local function runGameBypass()
             end
             return origReq(module, ...)
         end)
-
         pcall(function()
             local gmt = getmetatable(env)
             if not gmt then return end
@@ -400,26 +383,29 @@ local function runGameBypass()
                     return type(origIdx) == "function" and origIdx(t, k) or rawget(origIdx, k)
                 end
             end)
-            -- Spoof __tostring do ambiente para não revelar hooks
-            local origTS = rawget(gmt, "__tostring")
-            gmt.__tostring = newcclosure(function(v)
-                if origTS then return origTS(v) end
-                return tostring(v)
-            end)
             setreadonly(gmt, true)
         end)
     end)
     return ok, wiped, spoofed
 end
 
-local namecallHooked   = false
-local namecallOriginal = nil
-local newindexHooked   = false
-local newindexOriginal = nil
-local indexHooked      = false
-local indexOriginal    = nil
-local protectHumanoid  = nil
-local protectHRP       = nil
+local remoteCache = setmetatable({}, { __mode = "k" })
+local function classifyRemote(inst)
+    local v = remoteCache[inst]
+    if v == nil then
+        local nm = inst.Name
+        v = { k = matchesKick(nm) or matchesBan(nm), a = matchesAC(nm) }
+        remoteCache[inst] = v
+    end
+    return v
+end
+
+local FIRE_METHODS = {
+    FireServer = true, InvokeServer = true, Fire = true,
+    Invoke = true, FireClient = true, FireAllClients = true,
+}
+
+local namecallHooked, namecallOriginal = false, nil
 
 local function initNamecallHook()
     if namecallHooked then return true end
@@ -428,46 +414,26 @@ local function initNamecallHook()
         namecallOriginal = mt.__namecall
         setreadonly(mt, false)
         mt.__namecall = newcclosure(function(self, ...)
-            local method = getnamecallmethod()
-            local nameL  = ""
-            pcall(function() nameL = self.Name:lower() end)
-
-            -- Bloquear HttpGetAsync / GetAsync para URLs suspeitas de AC
-            if method == "GetAsync" or method == "HttpGetAsync" or method == "PostAsync" then
-                local args = { ... }
-                local url  = type(args[1]) == "string" and args[1] or ""
-                if matchesACUrl(url) then return "" end
-            end
-
-            if opt("AntiKickBanEnabled") then
-                if (method == "Kick" or method == "BootFromGame") and self == LocalPlayer then return end
-                if method == "KickPlayer" and self == Players then
-                    local a = { ... }
-                    if a[1] == LocalPlayer.UserId or a[1] == LocalPlayer then return end
-                end
-                if method == "FireServer" or method == "InvokeServer" then
-                    if matchesKick(nameL) or matchesBan(nameL) then return end
-                end
-                if method == "Fire" or method == "Invoke" then
-                    if matchesKick(nameL) or matchesBan(nameL) then
-                        return method == "Invoke" and false or nil
+            if F.antiKickBan or F.remoteBlock then
+                local method = getnamecallmethod()
+                if FIRE_METHODS[method] then
+                    local v = classifyRemote(self)
+                    if F.antiKickBan and v.k then
+                        return (method == "Invoke" or method == "InvokeServer") and false or nil
                     end
-                end
-                if (method == "FireClient" or method == "FireAllClients") and (matchesKick(nameL) or matchesBan(nameL)) then
-                    return
+                    if F.remoteBlock and v.a then return end
+                elseif method == "Kick" or method == "BootFromGame" then
+                    if F.antiKickBan and self == LocalPlayer then return end
+                elseif method == "KickPlayer" then
+                    if F.antiKickBan and self == Players then
+                        local a1 = ...
+                        if a1 == LocalPlayer or a1 == LocalPlayer.UserId then return end
+                    end
+                elseif method == "GetAsync" or method == "HttpGetAsync" or method == "PostAsync" then
+                    local url = ...
+                    if type(url) == "string" and matchesACUrl(url) then return "" end
                 end
             end
-
-            if opt("AntiCheatRemoteBlock") then
-                if method == "FireServer" or method == "InvokeServer" or method == "Fire" or method == "Invoke" then
-                    if matchesAC(nameL) then return end
-                end
-            end
-
-            if opt("GodHookDamage") and method == "TakeDamage" and self == protectHumanoid then
-                return 0
-            end
-
             return namecallOriginal(self, ...)
         end)
         setreadonly(mt, true)
@@ -476,37 +442,7 @@ local function initNamecallHook()
     return ok
 end
 
-local function initNewindexHook()
-    if newindexHooked then return true end
-    local ok = pcall(function()
-        local mt = getrawmetatable(game)
-        newindexOriginal = mt.__newindex
-        setreadonly(mt, false)
-        mt.__newindex = newcclosure(function(self, prop, val)
-            if opt("SpeedProtectEnabled") and prop == "WalkSpeed" and self == protectHumanoid then
-                local desired = opt("SpeedEnabled") and (opt("SpeedValue") or 50) or 16
-                if val ~= desired then return end
-            end
-            if opt("NoClipProtectEnabled") and opt("NoClipEnabled") and prop == "CanCollide" and val == true and self ~= protectHRP then
-                local c = getChar()
-                if c then
-                    local ok2, desc = pcall(function() return self:IsDescendantOf(c) end)
-                    if ok2 and desc then return end
-                end
-            end
-            if opt("FlyProtectEnabled") and opt("FlyEnabled") and prop == "PlatformStand" and val == false and self == protectHumanoid then
-                return
-            end
-            if opt("GodProtectEnabled") and self == protectHumanoid then
-                if (prop == "Health" and val <= 0) or (prop == "MaxHealth" and val <= 0) then return end
-            end
-            return newindexOriginal(self, prop, val)
-        end)
-        setreadonly(mt, true)
-        newindexHooked = true
-    end)
-    return ok
-end
+local indexHooked, indexOriginal = false, nil
 
 local function initIndexHook()
     if indexHooked then return true end
@@ -514,11 +450,19 @@ local function initIndexHook()
         local mt = getrawmetatable(game)
         indexOriginal = mt.__index
         setreadonly(mt, false)
-        mt.__index = newcclosure(function(self, prop)
-            if opt("SpeedSpoofEnabled") and prop == "WalkSpeed" and self == protectHumanoid then
-                return 16
+        mt.__index = newcclosure(function(self, key)
+            if F.silentAim and self == Mouse and (key == "Hit" or key == "Target" or key == "UnitRay") then
+                local part = getSilentTarget and select(2, getSilentTarget())
+                if part then
+                    if key == "Hit"    then return CFrame.new(part.Position) end
+                    if key == "Target" then return part end
+                    if key == "UnitRay" then
+                        local origin = Camera.CFrame.Position
+                        return Ray.new(origin, (part.Position - origin).Unit * 1000)
+                    end
+                end
             end
-            return indexOriginal(self, prop)
+            return indexOriginal(self, key)
         end)
         setreadonly(mt, true)
         indexHooked = true
@@ -535,165 +479,321 @@ local function disconnectACSignals()
     if hum then
         disc(hum:GetPropertyChangedSignal("WalkSpeed"))
         disc(hum:GetPropertyChangedSignal("JumpPower"))
-        disc(hum:GetPropertyChangedSignal("Health"))
         disc(hum:GetPropertyChangedSignal("MaxHealth"))
-        disc(hum.StateChanged)
-        disc(hum.ChildAdded)
     end
     if hrp then
-        disc(hrp:GetPropertyChangedSignal("CFrame"))
         disc(hrp:GetPropertyChangedSignal("Anchored"))
         disc(hrp:GetPropertyChangedSignal("AssemblyLinearVelocity"))
-        disc(hrp.ChildAdded)
-        disc(hrp.ChildRemoved)
     end
-    disc(char.ChildAdded)
-    disc(char.ChildRemoved)
-    disc(char.DescendantAdded)
-    disc(char.DescendantRemoving)
     return count
 end
 
-local highlights    = {}
-local billboards    = {}
-local bbHealthConns = {}
+local playerDropdowns = {}
 
-local function removeHighlight(player)
-    if highlights[player] then highlights[player]:Destroy(); highlights[player] = nil end
+local function refreshPlayerDropdowns()
+    local list = playerList()
+    for _, d in ipairs(playerDropdowns) do pcall(function() d:SetValues(list) end) end
 end
 
-local function removeBillboard(player)
-    if bbHealthConns[player] then bbHealthConns[player]:Disconnect(); bbHealthConns[player] = nil end
-    if billboards[player]    then billboards[player]:Destroy();       billboards[player]    = nil end
+local dropdownDirty = false
+local function queueDropdownRefresh()
+    if dropdownDirty then return end
+    dropdownDirty = true
+    task.delay(2, function() dropdownDirty = false; refreshPlayerDropdowns() end)
 end
 
-local function createHighlight(player)
-    local char = player.Character; if not char then return end
-    removeHighlight(player)
-    local h = Instance.new("Highlight")
-    h.FillTransparency    = 0.5
-    h.OutlineTransparency = 0
-    h.FillColor    = opt("ESPFillColor")    or Color3.fromRGB(255, 50, 50)
-    h.OutlineColor = opt("ESPOutlineColor") or Color3.fromRGB(255, 255, 255)
-    h.Adornee = char; h.Parent = char
-    highlights[player] = h
+local espData = {}
+local espContainer
+
+local function getESPContainer()
+    if espContainer and espContainer.Parent then return espContainer end
+    espContainer = Instance.new("Folder")
+    espContainer.Name = _TAG .. _RS(3)
+    pcall(function() if gethui then espContainer.Parent = gethui() end end)
+    if not espContainer.Parent then
+        pcall(function() espContainer.Parent = LocalPlayer:FindFirstChildOfClass("PlayerGui") end)
+    end
+    return espContainer
 end
 
-local function createBillboard(player)
-    local char = player.Character
-    local hrp  = char and char:FindFirstChild("HumanoidRootPart")
-    if not hrp then return end
-    removeBillboard(player)
+local function updateHealthVisual(d)
+    local hum = d.hum
+    if not hum then return end
+    local h  = math.floor(hum.Health + 0.5)
+    local mh = math.floor(hum.MaxHealth + 0.5)
+    if h == d.lastHealth and mh == d.lastMaxHealth then return end
+    d.lastHealth, d.lastMaxHealth = h, mh
+    local pct = math.clamp(h / math.max(mh, 1), 0, 1)
+    d.barFill.Size = UDim2.new(pct, 0, 1, 0)
+    d.barFill.BackgroundColor3 = Color3.fromRGB(
+        math.floor((1 - pct) * 220 + 25),
+        math.floor(pct * 195 + 25),
+        math.floor(pct * 70 + 25)
+    )
+    d.healthText.Text = h .. " / " .. mh
+end
+
+local function buildESP(player)
+    if player == LocalPlayer or espData[player] then return end
+    local container = getESPContainer()
+
+    local hl = Instance.new("Highlight")
+    hl.Name = _RS(5)
+    hl.FillTransparency    = 0.5
+    hl.OutlineTransparency = 1
+    hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+    hl.Enabled = false
+    hl.Parent = container
 
     local bb = Instance.new("BillboardGui")
-    -- Nome aleatório por sessão para evitar detecção por nome fixo
-    bb.Name = _BB_NAME; bb.Adornee = hrp; bb.AlwaysOnTop = true
-    bb.Size = UDim2.new(0, 100, 0, 30); bb.StudsOffset = Vector3.new(0, 3.5, 0)
-    bb.ResetOnSpawn = false; bb.Parent = char
+    bb.Name = _BB_NAME
+    bb.AlwaysOnTop = true
+    bb.LightInfluence = 0
+    bb.MaxDistance = 1000
+    bb.Size = UDim2.fromOffset(170, 42)
+    bb.StudsOffset = Vector3.new(0, 2.3, 0)
+    bb.ClipsDescendants = false
+    bb.Enabled = false
+    bb.Parent = container
 
     local nameLabel = Instance.new("TextLabel")
-    nameLabel.Size = UDim2.new(1, 0, 0.6, 0)
-    nameLabel.BackgroundTransparency = 1
-    nameLabel.TextColor3 = Color3.new(1, 1, 1)
-    nameLabel.TextStrokeTransparency = 0
-    nameLabel.Text = player.Name; nameLabel.TextScaled = true
-    nameLabel.Font = Enum.Font.GothamBold
     nameLabel.Name = "NameTag"
-    nameLabel.Visible = opt("ESPNameTags") or false
+    nameLabel.Size = UDim2.new(1, 0, 0.46, 0)
+    nameLabel.BackgroundTransparency = 1
+    nameLabel.Font = Enum.Font.GothamBold
+    nameLabel.Text = player.Name
+    nameLabel.TextScaled = true
+    nameLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    nameLabel.TextStrokeTransparency = 1
     nameLabel.Parent = bb
 
+    local nameConstraint = Instance.new("UITextSizeConstraint")
+    nameConstraint.MaxTextSize = 16
+    nameConstraint.MinTextSize = 7
+    nameConstraint.Parent = nameLabel
+
+    local nameStroke = Instance.new("UIStroke")
+    nameStroke.Thickness = 1.6
+    nameStroke.Color = Color3.fromRGB(0, 0, 0)
+    nameStroke.Transparency = 0.2
+    nameStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Contextual
+    nameStroke.Parent = nameLabel
+
+    local healthText = Instance.new("TextLabel")
+    healthText.Name = "HealthText"
+    healthText.Size = UDim2.new(1, 0, 0.28, 0)
+    healthText.Position = UDim2.new(0, 0, 0.46, 0)
+    healthText.BackgroundTransparency = 1
+    healthText.Font = Enum.Font.GothamMedium
+    healthText.TextScaled = true
+    healthText.TextColor3 = Color3.fromRGB(230, 230, 230)
+    healthText.TextStrokeTransparency = 1
+    healthText.Parent = bb
+
+    local htConstraint = Instance.new("UITextSizeConstraint")
+    htConstraint.MaxTextSize = 12
+    htConstraint.MinTextSize = 6
+    htConstraint.Parent = healthText
+
+    local htStroke = Instance.new("UIStroke")
+    htStroke.Thickness = 1.2
+    htStroke.Color = Color3.fromRGB(0, 0, 0)
+    htStroke.Transparency = 0.35
+    htStroke.Parent = healthText
+
     local barBg = Instance.new("Frame")
-    barBg.Name = "HealthBarBg"; barBg.Size = UDim2.new(1, 0, 0.3, 0)
-    barBg.Position = UDim2.new(0, 0, 0.7, 0)
-    barBg.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
-    barBg.BorderSizePixel = 0; barBg.Visible = opt("ESPHealthBar") or false
+    barBg.Name = "HealthBarBg"
+    barBg.Size = UDim2.new(0.85, 0, 0.17, 0)
+    barBg.Position = UDim2.new(0.075, 0, 0.83, 0)
+    barBg.BackgroundColor3 = Color3.fromRGB(20, 20, 22)
+    barBg.BackgroundTransparency = 0.1
+    barBg.BorderSizePixel = 0
     barBg.Parent = bb
 
+    local bgCorner = Instance.new("UICorner")
+    bgCorner.CornerRadius = UDim.new(1, 0)
+    bgCorner.Parent = barBg
+
+    local bgStroke = Instance.new("UIStroke")
+    bgStroke.Thickness = 1
+    bgStroke.Color = Color3.fromRGB(0, 0, 0)
+    bgStroke.Transparency = 0.25
+    bgStroke.Parent = barBg
+
     local barFill = Instance.new("Frame")
-    barFill.Name = "HealthFill"; barFill.Size = UDim2.new(1, 0, 1, 0)
-    barFill.BackgroundColor3 = Color3.fromRGB(0, 200, 0)
-    barFill.BorderSizePixel = 0; barFill.Parent = barBg
+    barFill.Name = "HealthFill"
+    barFill.Size = UDim2.new(1, 0, 1, 0)
+    barFill.BackgroundColor3 = Color3.fromRGB(0, 220, 90)
+    barFill.BorderSizePixel = 0
+    barFill.Parent = barBg
 
-    local hum = char:FindFirstChildOfClass("Humanoid")
-    if hum then
-        local function updateBar()
-            if not barFill.Parent then return end
-            local pct = math.clamp(hum.Health / math.max(hum.MaxHealth, 1), 0, 1)
-            barFill.Size = UDim2.new(pct, 0, 1, 0)
-            barFill.BackgroundColor3 = Color3.fromRGB(math.floor((1 - pct) * 255), math.floor(pct * 200), 0)
-        end
-        bbHealthConns[player] = hum.HealthChanged:Connect(updateBar)
-        updateBar()
-    end
+    local fillCorner = Instance.new("UICorner")
+    fillCorner.CornerRadius = UDim.new(1, 0)
+    fillCorner.Parent = barFill
 
-    billboards[player] = bb
+    local fillGradient = Instance.new("UIGradient")
+    fillGradient.Transparency = NumberSequence.new({
+        NumberSequenceKeypoint.new(0, 0),
+        NumberSequenceKeypoint.new(1, 0.25),
+    })
+    fillGradient.Rotation = 90
+    fillGradient.Parent = barFill
+
+    espData[player] = {
+        highlight = hl, billboard = bb, nameLabel = nameLabel,
+        healthText = healthText, barBg = barBg, barFill = barFill,
+        hum = nil, root = nil, lastScale = 0, lastHealth = nil, lastMaxHealth = nil,
+    }
 end
 
-local function updateESPForPlayer(player)
-    if player == LocalPlayer then return end
-    local char     = player.Character
-    local alive    = char and char:FindFirstChild("HumanoidRootPart")
-    local sameTeam = opt("ESPTeamCheck") and (player.Team == LocalPlayer.Team)
-    local espOn    = opt("ESPEnabled")
-    local tagOn    = opt("ESPNameTags")
-    local barOn    = opt("ESPHealthBar")
+local function bindESP(player)
+    local d = espData[player]; if not d then return end
+    local char = player.Character
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+    d.highlight.Adornee = char
+    d.billboard.Adornee = root
+    d.root = root
+    d.hum = char and char:FindFirstChildOfClass("Humanoid")
+    d.lastHealth = nil
+    d.lastMaxHealth = nil
+end
 
-    if espOn and alive and not sameTeam then
-        if not highlights[player] or not highlights[player].Parent then createHighlight(player) end
-        local h = highlights[player]
-        if h then
-            h.FillColor    = opt("ESPFillColor")    or Color3.fromRGB(255, 50, 50)
-            h.OutlineColor = opt("ESPOutlineColor") or Color3.fromRGB(255, 255, 255)
-        end
-    else
-        removeHighlight(player)
-    end
+local function destroyESP(player)
+    local d = espData[player]; if not d then return end
+    pcall(function() d.highlight:Destroy() end)
+    pcall(function() d.billboard:Destroy() end)
+    espData[player] = nil
+end
 
-    if (tagOn or barOn) and alive then
-        if not billboards[player] or not billboards[player].Parent then createBillboard(player) end
-        local bb = billboards[player]
-        if bb then
-            local nl = bb:FindFirstChild("NameTag");     if nl then nl.Visible = tagOn or false end
-            local bg = bb:FindFirstChild("HealthBarBg"); if bg then bg.Visible = barOn or false end
+local function espIsOn()
+    return opt("ESPEnabled") or opt("ESPNameTags") or opt("ESPHealthBar")
+end
+
+local function enableESPAll()
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer then
+            buildESP(p)
+            bindESP(p)
         end
-    else
-        removeBillboard(player)
     end
 end
 
-local function refreshESP()
-    for _, p in ipairs(Players:GetPlayers()) do updateESPForPlayer(p) end
+local function disableESPAll()
+    for p in pairs(espData) do destroyESP(p) end
 end
 
-Players.PlayerRemoving:Connect(function(p) removeHighlight(p); removeBillboard(p) end)
+local function onESPToggle()
+    if espIsOn() then enableESPAll() else disableESPAll() end
+end
+
+local function hookPlayerESP(p)
+    if p == LocalPlayer then return end
+    p.CharacterAdded:Connect(function(char)
+        if not espData[p] then return end
+        pcall(function() char:WaitForChild("HumanoidRootPart", 6) end)
+        bindESP(p)
+    end)
+end
+
+for _, p in ipairs(Players:GetPlayers()) do hookPlayerESP(p) end
+
 Players.PlayerAdded:Connect(function(p)
-    p.CharacterAdded:Connect(function() task.wait(0.5); updateESPForPlayer(p) end)
+    hookPlayerESP(p)
+    if espIsOn() then buildESP(p); bindESP(p) end
+    queueDropdownRefresh()
 end)
 
-Tabs.ESP:AddSection("Player ESP")
-Tabs.ESP:AddToggle("ESPEnabled",   { Title = "Enable ESP",  Default = false, Callback = function() refreshESP() end })
-Tabs.ESP:AddToggle("ESPTeamCheck", { Title = "Team Check",  Default = false, Callback = function() refreshESP() end })
-local espFill = Tabs.ESP:AddColorpicker("ESPFillColor",    { Title = "Fill Color",    Default = Color3.fromRGB(255, 50, 50)   })
-local espOut  = Tabs.ESP:AddColorpicker("ESPOutlineColor", { Title = "Outline Color", Default = Color3.fromRGB(255, 255, 255) })
-espFill:OnChanged(function() refreshESP() end)
-espOut:OnChanged(function()  refreshESP() end)
+Players.PlayerRemoving:Connect(function(p)
+    destroyESP(p)
+    queueDropdownRefresh()
+end)
 
-Tabs.ESP:AddSection("Name Tags & Health")
-Tabs.ESP:AddToggle("ESPNameTags",  { Title = "Name Tags",  Default = false, Callback = function() refreshESP() end })
-Tabs.ESP:AddToggle("ESPHealthBar", { Title = "Health Bar", Default = false, Callback = function() refreshESP() end })
+local espWasActive = false
+local espAccum = 0
+RunService.Heartbeat:Connect(function(dt)
+    local espOn = opt("ESPEnabled")
+    local tagOn = opt("ESPNameTags")
+    local barOn = opt("ESPHealthBar")
+    if not (espOn or tagOn or barOn) then
+        if espWasActive then
+            for _, d in pairs(espData) do
+                d.highlight.Enabled = false
+                d.billboard.Enabled = false
+            end
+            espWasActive = false
+        end
+        return
+    end
+    espWasActive = true
+    espAccum += dt
+    if espAccum < 0.1 then return end
+    espAccum = 0
+
+    local teamChk = opt("ESPTeamCheck")
+    local fill    = opt("ESPFillColor") or Color3.fromRGB(255, 50, 50)
+    local bbOn    = tagOn or barOn
+    local camPos  = workspace.CurrentCamera.CFrame.Position
+    local myTeam  = LocalPlayer.Team
+    for player, d in pairs(espData) do
+        local root = d.root
+        local sameTeam = teamChk and player.Team == myTeam
+        if root and root.Parent and not sameTeam then
+            if d.highlight.Enabled ~= espOn then d.highlight.Enabled = espOn end
+            if espOn and d.highlight.FillColor ~= fill then d.highlight.FillColor = fill end
+            if d.billboard.Enabled ~= bbOn then d.billboard.Enabled = bbOn end
+            if bbOn then
+                if d.nameLabel.Visible ~= tagOn then d.nameLabel.Visible = tagOn end
+                if d.healthText.Visible ~= barOn then d.healthText.Visible = barOn end
+                if d.barBg.Visible ~= barOn then d.barBg.Visible = barOn end
+                if barOn then updateHealthVisual(d) end
+                local dist  = (camPos - root.Position).Magnitude
+                local scale = math.clamp(60 / math.max(dist, 1), 0.4, 1.15)
+                if math.abs(scale - d.lastScale) > 0.04 then
+                    d.lastScale = scale
+                    d.billboard.Size = UDim2.fromOffset(170 * scale, 42 * scale)
+                end
+            end
+        else
+            if d.highlight.Enabled then d.highlight.Enabled = false end
+            if d.billboard.Enabled then d.billboard.Enabled = false end
+        end
+    end
+end)
 
 local function applySpeed()
     local hum = getHum(); if not hum then return end
-    hum.WalkSpeed = opt("SpeedEnabled") and (opt("SpeedValue") or 50) or 16
+    hum.WalkSpeed = F.speed and (opt("SpeedValue") or 50) or 16
+end
+
+local noclipParts = {}
+local noclipChar  = nil
+
+local function refreshNoclipParts()
+    table.clear(noclipParts)
+    noclipChar = getChar()
+    if not noclipChar then return end
+    for _, p in ipairs(noclipChar:GetDescendants()) do
+        if p:IsA("BasePart") then noclipParts[#noclipParts + 1] = p end
+    end
 end
 
 local function applyNoClip()
     local char = getChar(); if not char then return end
-    local target = not (opt("NoClipEnabled") or false)
-    for _, p in ipairs(char:GetDescendants()) do
-        if p:IsA("BasePart") and p.Name ~= "HumanoidRootPart" and p.CanCollide ~= target then
-            p.CanCollide = target
+    if char ~= noclipChar then refreshNoclipParts() end
+    for i = #noclipParts, 1, -1 do
+        local p = noclipParts[i]
+        if p.Parent then
+            if p.CanCollide then p.CanCollide = false end
+        else
+            table.remove(noclipParts, i)
         end
+    end
+end
+
+local function restoreNoClip()
+    local char = getChar(); if not char then return end
+    for _, p in ipairs(char:GetDescendants()) do
+        if p:IsA("BasePart") and not p.CanCollide then p.CanCollide = true end
     end
 end
 
@@ -712,10 +812,10 @@ local function enableFly()
     local hrp  = char:FindFirstChild("HumanoidRootPart"); if not hrp then return end
     local hum  = char:FindFirstChildOfClass("Humanoid"); if hum then hum.PlatformStand = true end
     flyBV = Instance.new("BodyVelocity")
-    flyBV.Name = _BV_NAME -- nome aleatório por sessão
+    flyBV.Name = _BV_NAME
     flyBV.Velocity = Vector3.zero; flyBV.MaxForce = Vector3.new(math.huge, math.huge, math.huge); flyBV.Parent = hrp
     flyBG = Instance.new("BodyGyro")
-    flyBG.Name = _BG_NAME -- nome aleatório por sessão
+    flyBG.Name = _BG_NAME
     flyBG.MaxTorque = Vector3.new(math.huge, math.huge, math.huge); flyBG.CFrame = Camera.CFrame; flyBG.Parent = hrp
     flyConn = RunService.RenderStepped:Connect(function()
         local speed = opt("FlySpeed") or 50
@@ -744,7 +844,7 @@ local function enableVehicleFly()
     local char = getChar(); if not char then return end
     local hum  = char:FindFirstChildOfClass("Humanoid")
     if not hum or not hum.SeatPart then
-        Fluent:Notify({ Title = "Vehicle Fly", Content = "Você precisa estar dentro de um veículo.", Duration = 3 })
+        notify({ Title = "Vehicle Fly", Content = "Você precisa estar dentro de um veículo.", Duration = 3 })
         Options.VehicleFlyEnabled:SetValue(false); return
     end
     local root = (hum.SeatPart.Parent and hum.SeatPart.Parent:IsA("Model") and hum.SeatPart.Parent.PrimaryPart) or hum.SeatPart
@@ -787,33 +887,6 @@ local function enableInfinityJump()
     end)
 end
 
-local function applyAntiRagdoll()
-    local hum = getHum(); if not hum then return end
-    local en = opt("AntiRagdollEnabled") or false
-    pcall(function() hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown, not en) end)
-    pcall(function() hum:SetStateEnabled(Enum.HumanoidStateType.Ragdoll,     not en) end)
-end
-
-local antiFallConn
-
-local function setupAntiFallDamage()
-    if antiFallConn then antiFallConn:Disconnect(); antiFallConn = nil end
-    local hum = getHum(); if not hum then return end
-    local savedHealth, wasFalling = hum.Health, false
-    antiFallConn = hum.StateChanged:Connect(function(_, newState)
-        if not opt("AntiFallDamageEnabled") then return end
-        if newState == Enum.HumanoidStateType.Freefall then
-            savedHealth = hum.Health; wasFalling = true
-        elseif wasFalling then
-            wasFalling = false
-            task.spawn(function()
-                task.wait()
-                if hum.Parent and hum.Health < savedHealth then hum.Health = savedHealth end
-            end)
-        end
-    end)
-end
-
 local walkOnAirConn
 
 local function enableWalkOnAir()
@@ -833,109 +906,17 @@ local function disableWalkOnAir()
     if walkOnAirConn then walkOnAirConn:Disconnect(); walkOnAirConn = nil end
 end
 
-local waypoints     = {}
-local waypointCount = 0
-local waypointDrop  = nil
+local function startSpy()
+    local name = opt("PlayerSpyTarget"); if not name or name == "(none)" then return end
+    local target = Players:FindFirstChild(name)
+    if not target or not target.Character then notify({ Title = "Spectate", Content = "Jogador não encontrado.", Duration = 3 }); return end
+    local hum = target.Character:FindFirstChildOfClass("Humanoid")
+    if hum then Camera.CameraSubject = hum; notify({ Title = "Spectate", Content = "Espionando " .. name, Duration = 3 }) end
+end
 
-Tabs.Movement:AddSection("Movement")
-Tabs.Movement:AddToggle("SpeedEnabled",        { Title = "Speed Hack",        Default = false, Callback = function()  applySpeed()  end })
-Tabs.Movement:AddSlider("SpeedValue",          { Title = "Walk Speed",        Default = 50, Min = 16, Max = 300, Rounding = 0, Callback = function() applySpeed() end })
-Tabs.Movement:AddToggle("NoClipEnabled",       { Title = "NoClip",            Default = false, Callback = function()  applyNoClip() end })
-Tabs.Movement:AddToggle("FlyEnabled",          { Title = "Fly",               Default = false, Callback = function(s) if s then enableFly()         else disableFly()         end end })
-Tabs.Movement:AddSlider("FlySpeed",            { Title = "Fly Speed",         Default = 50,  Min = 10, Max = 300, Rounding = 0, Callback = function() end })
-Tabs.Movement:AddToggle("VehicleFlyEnabled",   { Title = "Vehicle Fly",       Default = false, Callback = function(s) if s then enableVehicleFly()  else disableVehicleFly()  end end })
-Tabs.Movement:AddSlider("VehicleFlySpeed",     { Title = "Vehicle Fly Speed", Default = 100, Min = 10, Max = 500, Rounding = 0, Callback = function() end })
-Tabs.Movement:AddToggle("InfinityJumpEnabled", { Title = "Infinity Jump",     Default = false, Callback = function(s) if s then enableInfinityJump() else disableInfinityJump() end end })
-Tabs.Movement:AddToggle("WalkOnAirEnabled",    { Title = "Walk on Air",       Default = false, Callback = function(s) if s then enableWalkOnAir()   else disableWalkOnAir()   end end })
-
-Tabs.Movement:AddSection("Safety")
-Tabs.Movement:AddToggle("AntiRagdollEnabled",    { Title = "Anti-Ragdoll",     Default = false, Callback = function() applyAntiRagdoll() end })
-Tabs.Movement:AddToggle("AntiFallDamageEnabled", { Title = "Anti-Fall Damage", Default = false, Callback = function(s)
-    if s then setupAntiFallDamage() else if antiFallConn then antiFallConn:Disconnect(); antiFallConn = nil end end
-end })
-
-Tabs.Movement:AddSection("Teleport")
-Tabs.Movement:AddToggle("ClickTPEnabled", { Title = "Click TP", Default = false, Callback = function() end })
-Tabs.Movement:AddButton({
-    Title    = "TP to Spawn",
-    Callback = function()
-        local hrp = getHRP(); if not hrp then return end
-        local spawn = workspace:FindFirstChildOfClass("SpawnLocation")
-        if not spawn then
-            for _, v in ipairs(workspace:GetDescendants()) do
-                if v:IsA("SpawnLocation") then spawn = v; break end
-            end
-        end
-        if spawn then
-            hrp.CFrame = CFrame.new(spawn.Position + Vector3.new(0, 3, 0))
-            Fluent:Notify({ Title = "TP to Spawn", Content = "Teletransportado para o spawn.", Duration = 3 })
-        else
-            Fluent:Notify({ Title = "TP to Spawn", Content = "Spawn não encontrado.", Duration = 3 })
-        end
-    end,
-})
-
-Tabs.Movement:AddSection("Waypoints")
-Tabs.Movement:AddInput("WaypointName", { Title = "Waypoint Name", Placeholder = "Nome do waypoint", Numeric = false, Finished = false, Callback = function() end })
-Tabs.Movement:AddButton({
-    Title    = "Save Waypoint",
-    Callback = function()
-        local hrp = getHRP(); if not hrp then return end
-        local name = opt("WaypointName")
-        if not name or name == "" then waypointCount += 1; name = "WP" .. waypointCount end
-        waypoints[name] = hrp.CFrame
-        local keys = {}
-        for k in pairs(waypoints) do keys[#keys + 1] = k end
-        if waypointDrop then pcall(function() waypointDrop:SetValues(keys) end) end
-        Fluent:Notify({ Title = "Waypoints", Content = "Waypoint '" .. name .. "' salvo!", Duration = 3 })
-    end,
-})
-waypointDrop = Tabs.Movement:AddDropdown("WaypointSelect", { Title = "Select Waypoint", Values = {}, Multi = false, Default = nil, Callback = function() end })
-Tabs.Movement:AddButton({
-    Title    = "Teleport to Waypoint",
-    Callback = function()
-        local sel = opt("WaypointSelect")
-        if not sel or sel == "" then Fluent:Notify({ Title = "Waypoints", Content = "Selecione um waypoint.", Duration = 3 }); return end
-        local cf = waypoints[sel]
-        if not cf then Fluent:Notify({ Title = "Waypoints", Content = "Waypoint não encontrado.", Duration = 3 }); return end
-        local hrp = getHRP()
-        if hrp then hrp.CFrame = cf; Fluent:Notify({ Title = "Waypoints", Content = "Teleportado para '" .. sel .. "'.", Duration = 3 }) end
-    end,
-})
-Tabs.Movement:AddButton({
-    Title    = "Delete Waypoint",
-    Callback = function()
-        local sel = opt("WaypointSelect")
-        if not sel or sel == "" then Fluent:Notify({ Title = "Waypoints", Content = "Selecione um waypoint.", Duration = 3 }); return end
-        waypoints[sel] = nil
-        local keys = {}
-        for k in pairs(waypoints) do keys[#keys + 1] = k end
-        if waypointDrop then pcall(function() waypointDrop:SetValues(keys) end) end
-        Fluent:Notify({ Title = "Waypoints", Content = "Waypoint '" .. sel .. "' deletado.", Duration = 3 })
-    end,
-})
-
-UserInputService.InputBegan:Connect(function(input, processed)
-    if processed or input.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
-    if not opt("ClickTPEnabled") then return end
-    local params = RaycastParams.new()
-    params.FilterDescendantsInstances = { getChar() }
-    params.FilterType = Enum.RaycastFilterType.Exclude
-    local ray    = Camera:ScreenPointToRay(input.Position.X, input.Position.Y)
-    local result = workspace:Raycast(ray.Origin, ray.Direction * 2000, params)
-    if result then
-        local hrp = getHRP()
-        if hrp then hrp.CFrame = CFrame.new(result.Position + Vector3.new(0, 3, 0)) end
-    end
-end)
-
-Tabs.Movement:AddSection("Utility")
-Tabs.Movement:AddToggle("AntiAFKEnabled", { Title = "Anti-AFK", Default = false, Callback = function() end })
-LocalPlayer.Idled:Connect(function()
-    if opt("AntiAFKEnabled") then
-        pcall(function() VirtualUser:CaptureController(); VirtualUser:ClickButton2(Vector2.new()) end)
-    end
-end)
+local function stopSpy()
+    local hum = getHum(); if hum then Camera.CameraSubject = hum end
+end
 
 local origLighting  = {}
 local hiddenEffects = {}
@@ -984,309 +965,16 @@ local function setRemoveEffects(on)
     end
 end
 
-local freecamActive    = false
-local freecamConn      = nil
-local freecamMouseConn = nil
-local freecamCF        = CFrame.new(0, 10, 0)
-
-local function stopFreecam()
-    freecamActive = false
-    if freecamConn      then freecamConn:Disconnect();      freecamConn      = nil end
-    if freecamMouseConn then freecamMouseConn:Disconnect(); freecamMouseConn = nil end
-    Camera.CameraType = Enum.CameraType.Custom
-    local hum = getHum(); if hum then Camera.CameraSubject = hum end
-end
-
-local function startFreecam()
-    if freecamActive then stopFreecam() end
-    freecamActive = true; freecamCF = Camera.CFrame
-    Camera.CameraType = Enum.CameraType.Scriptable
-
-    freecamConn = RunService.RenderStepped:Connect(function(dt)
-        if not freecamActive then return end
-        local speed = (opt("FreecamSpeed") or 1) * 60 * dt
-        local dir   = Vector3.zero
-        if UserInputService:IsKeyDown(Enum.KeyCode.W)         then dir += freecamCF.LookVector  end
-        if UserInputService:IsKeyDown(Enum.KeyCode.S)         then dir -= freecamCF.LookVector  end
-        if UserInputService:IsKeyDown(Enum.KeyCode.A)         then dir -= freecamCF.RightVector end
-        if UserInputService:IsKeyDown(Enum.KeyCode.D)         then dir += freecamCF.RightVector end
-        if UserInputService:IsKeyDown(Enum.KeyCode.Space)     then dir += Vector3.yAxis         end
-        if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then dir -= Vector3.yAxis         end
-        if dir.Magnitude > 0 then
-            freecamCF = CFrame.new(freecamCF.Position + dir.Unit * speed) * (freecamCF - freecamCF.Position)
-        end
-        Camera.CFrame = freecamCF
-    end)
-
-    freecamMouseConn = UserInputService.InputChanged:Connect(function(input)
-        if not freecamActive or input.UserInputType ~= Enum.UserInputType.MouseMovement then return end
-        local d = input.Delta
-        freecamCF = CFrame.new(freecamCF.Position)
-            * (freecamCF - freecamCF.Position)
-            * CFrame.Angles(0, math.rad(-d.X * 0.3), 0)
-            * CFrame.Angles(math.rad(-d.Y * 0.3), 0, 0)
-    end)
-end
-
-Tabs.World:AddSection("Lighting")
-Tabs.World:AddToggle("FullbrightEnabled",    { Title = "Fullbright",     Default = false, Callback = setFullbright    })
-Tabs.World:AddToggle("NoFogEnabled",         { Title = "No Fog",         Default = false, Callback = setNoFog         })
-Tabs.World:AddToggle("RemoveEffectsEnabled", { Title = "Remove Effects", Default = false, Callback = setRemoveEffects })
-
-Tabs.World:AddSection("Freecam")
-Tabs.World:AddToggle("FreecamEnabled", { Title = "Freecam",       Default = false, Callback = function(s) if s then startFreecam() else stopFreecam() end end })
-Tabs.World:AddSlider("FreecamSpeed",   { Title = "Freecam Speed", Default = 1, Min = 0.1, Max = 10, Rounding = 1, Callback = function() end })
-
-Tabs.Player:AddSection("Player TP")
-local playerTPDrop = Tabs.Player:AddDropdown("PlayerTPTarget", { Title = "Select Player", Values = playerList(), Multi = false, Default = 1 })
-Tabs.Player:AddButton({
-    Title    = "Teleport",
-    Callback = function()
-        local name = opt("PlayerTPTarget")
-        if not name or name == "(none)" then return end
-        local target = Players:FindFirstChild(name)
-        if not target or not target.Character then Fluent:Notify({ Title = "Player TP", Content = "Jogador não encontrado.", Duration = 3 }); return end
-        local tHRP = target.Character:FindFirstChild("HumanoidRootPart")
-        local hrp  = getHRP()
-        if tHRP and hrp then hrp.CFrame = tHRP.CFrame * CFrame.new(3, 0, 0); Fluent:Notify({ Title = "Player TP", Content = "Teleportado para " .. name, Duration = 3 }) end
-    end,
-})
-Tabs.Player:AddButton({
-    Title    = "Refresh List",
-    Callback = function()
-        local list = playerList()
-        pcall(function() playerTPDrop:SetValues(list) end)
-        Fluent:Notify({ Title = "Player TP", Content = "Lista atualizada.", Duration = 2 })
-    end,
-})
-
-Tabs.Player:AddSection("Player Spy")
-local playerSpyDrop = Tabs.Player:AddDropdown("PlayerSpyTarget", { Title = "Spy on Player", Values = playerList(), Multi = false, Default = 1 })
-
-local function startSpy()
-    local name = opt("PlayerSpyTarget"); if not name or name == "(none)" then return end
-    local target = Players:FindFirstChild(name)
-    if not target or not target.Character then Fluent:Notify({ Title = "Player Spy", Content = "Jogador não encontrado.", Duration = 3 }); return end
-    local hum = target.Character:FindFirstChildOfClass("Humanoid")
-    if hum then Camera.CameraSubject = hum; Fluent:Notify({ Title = "Player Spy", Content = "Espionando " .. name, Duration = 3 }) end
-end
-
-local function stopSpy()
-    local hum = getHum(); if hum then Camera.CameraSubject = hum end
-end
-
-Tabs.Player:AddToggle("SpyEnabled", { Title = "Enable Spy", Default = false, Callback = function(s) if s then startSpy() else stopSpy() end end })
-playerSpyDrop:OnChanged(function() if opt("SpyEnabled") then startSpy() end end)
-
-Tabs.Player:AddSection("God Mode")
-Tabs.Player:AddParagraph({
-    Title   = "Aviso",
-    Content = "Ative múltiplos métodos ao mesmo tempo para maior proteção.\nMétodos avançados requerem executor compatível.",
-})
-Tabs.Player:AddToggle("GodHealthRestore", { Title = "Health Restore",   Default = false, Callback = function() end })
-Tabs.Player:AddToggle("GodForcefield", {
-    Title    = "Forcefield",
-    Default  = false,
-    Callback = function(state)
-        local char = getChar(); if not char then return end
-        -- Usa _FF_NAME (aleatório por sessão) em vez de "DH_FF" fixo
-        for _, v in ipairs(char:GetChildren()) do if v:IsA("ForceField") and v.Name == _FF_NAME then v:Destroy() end end
-        if state then
-            local ff = Instance.new("ForceField"); ff.Name = _FF_NAME; ff.Visible = false; ff.Parent = char
-        end
-    end,
-})
-Tabs.Player:AddToggle("GodMaxHealth", {
-    Title    = "Infinite Health",
-    Default  = false,
-    Callback = function(state)
-        local hum = getHum(); if not hum then return end
-        if state then hum.MaxHealth = math.huge; hum.Health = math.huge
-        else          hum.MaxHealth = 100;       hum.Health = 100 end
-    end,
-})
-Tabs.Player:AddToggle("GodDeadState", {
-    Title    = "Disable Dead State",
-    Default  = false,
-    Callback = function(state)
-        local hum = getHum(); if not hum then return end
-        pcall(function() hum:SetStateEnabled(Enum.HumanoidStateType.Dead, not state) end)
-    end,
-})
-Tabs.Player:AddToggle("GodHookDamage", {
-    Title    = "Hook TakeDamage",
-    Default  = false,
-    Callback = function(state)
-        if not state then return end
-        if not initNamecallHook() then
-            Fluent:Notify({ Title = "God Mode", Content = "Executor não suporta hook de TakeDamage.", Duration = 4 })
-        end
-    end,
-})
-
-local flyGuardConn
-
-local function startFlyGuard()
-    if flyGuardConn then flyGuardConn:Disconnect() end
-    flyGuardConn = RunService.Heartbeat:Connect(function()
-        if not opt("FlyProtectEnabled") or not opt("FlyEnabled") then return end
-        if not flyBV or not flyBV.Parent then task.spawn(enableFly) end
-    end)
-end
-
-local function stopFlyGuard()
-    if flyGuardConn then flyGuardConn:Disconnect(); flyGuardConn = nil end
-end
-
-Tabs.Bypass:AddSection("Game Bypass")
-Tabs.Bypass:AddParagraph({
-    Title   = "Aviso",
-    Content = "Apaga globals do executor, falsifica funções de identificação,\nhookeia loadstring/require e bloqueia leituras via __index.\nRequer executor com getgenv() + metamétodos.",
-})
-Tabs.Bypass:AddToggle("GameBypassEnabled", {
-    Title    = "Fingerprint Wipe",
-    Default  = false,
-    Callback = function(state)
-        if not state then return end
-        local ok, wiped, spoofed = runGameBypass()
-        Fluent:Notify({
-            Title      = "Fingerprint Wipe",
-            Content    = ok and "Bypass aplicado com sucesso." or "Executor não suporta getgenv().",
-            SubContent = ok and ("Globals apagadas: " .. wiped .. "  |  Funções falsificadas: " .. spoofed) or nil,
-            Duration   = 5,
-        })
-    end,
-})
-
-Tabs.Bypass:AddSection("Anti-Kick & Ban")
-Tabs.Bypass:AddParagraph({
-    Title   = "Aviso",
-    Content = "Bloqueia Kick(), BootFromGame(), KickPlayer() e qualquer\nFireServer/InvokeServer com nome de kick ou ban.\nDestrói remotes de kick/ban e monitora novos.",
-})
-Tabs.Bypass:AddToggle("AntiKickBanEnabled", {
-    Title    = "Anti-Kick & Ban",
-    Default  = false,
-    Callback = function(state)
-        if state then
-            local ok      = initNamecallHook()
-            local removed = destroyKickBanRemotes()
-            startAntiBanKickMonitor()
-            Fluent:Notify({
-                Title      = "Anti-Kick & Ban",
-                Content    = ok and "Ativo — kicks e bans bloqueados." or "Executor sem suporte a metamétodos.",
-                SubContent = removed > 0 and ("Remotes destruídas: " .. removed) or "Nenhuma remote de kick/ban encontrada.",
-                Duration   = 5,
-            })
-        else
-            stopAntiBanKickMonitor()
-            Fluent:Notify({ Title = "Anti-Kick & Ban", Content = "Desativado.", Duration = 4 })
-        end
-    end,
-})
-
-Tabs.Bypass:AddSection("Anti-Cheat Bypass")
-Tabs.Bypass:AddParagraph({
-    Title   = "Aviso",
-    Content = "Breaker: varre todos os serviços, desconecta signals,\nhookeia loadstring/require e re-scana em intervalo aleatório.\nScan: varredura única + inspeção de source de scripts.\nMonitor: DescendantAdded no player.\nRemote Block: bloqueia FireServer de AC.\nHTTP Block: bloqueia GetAsync de URLs suspeitas.",
-})
-Tabs.Bypass:AddToggle("ACBreakerEnabled", {
-    Title    = "Anti-Cheat Breaker",
-    Default  = false,
-    Callback = function(state)
-        if state then
-            initNamecallHook()
-            if Options.AntiCheatRemoteBlock then Options.AntiCheatRemoteBlock:SetValue(true) end
-            local r = runFullScan()
-            startBreakerMonitor()
-            Fluent:Notify({
-                Title      = "Anti-Cheat Breaker",
-                Content    = "Ativo — anti-cheat destruído em todos os serviços.",
-                SubContent = "Desativados: " .. r.disabled .. "  |  Destruídos: " .. r.destroyed .. (r.conns > 0 and ("  |  Signals: " .. r.conns) or ""),
-                Duration   = 6,
-            })
-        else
-            stopBreakerMonitor()
-            Fluent:Notify({ Title = "Anti-Cheat Breaker", Content = "Monitor desativado.", Duration = 3 })
-        end
-    end,
-})
-Tabs.Bypass:AddButton({
-    Title    = "Full Scan & Disable",
-    Callback = function()
-        local r = runPlayerScan(); initNamecallHook()
-        Fluent:Notify({
-            Title      = "Anti-Cheat Scan",
-            Content    = "Scan concluído.",
-            SubContent = "Scripts desativados: " .. r.disabled .. "  |  Remotes removidas: " .. r.destroyed,
-            Duration   = 5,
-        })
-    end,
-})
-Tabs.Bypass:AddToggle("AntiCheatMonitor", {
-    Title    = "Anti-Cheat Monitor",
-    Default  = false,
-    Callback = function(state)
-        if state then runPlayerScan(); startACMonitor(); Fluent:Notify({ Title = "Anti-Cheat Monitor", Content = "Monitor ativo.", Duration = 4 })
-        else stopACMonitor() end
-    end,
-})
-Tabs.Bypass:AddToggle("AntiCheatRemoteBlock", {
-    Title    = "Remote Report Block",
-    Default  = false,
-    Callback = function(state)
-        if not state then return end
-        local ok = initNamecallHook()
-        Fluent:Notify({ Title = "Remote Report Block", Content = ok and "Ativo — remotes de AC bloqueadas." or "Executor sem suporte.", Duration = 4 })
-    end,
-})
-
-Tabs.Bypass:AddSection("Action Protect")
-Tabs.Bypass:AddToggle("SpeedProtectEnabled",  { Title = "Speed Protect",  Default = false, Callback = function(s) if s then initNewindexHook() end end })
-Tabs.Bypass:AddToggle("SpeedSpoofEnabled",    { Title = "Speed Spoof",    Default = false, Callback = function(s) if s then initIndexHook()    end end })
-Tabs.Bypass:AddToggle("NoClipProtectEnabled", { Title = "NoClip Protect", Default = false, Callback = function(s) if s then initNewindexHook() end end })
-Tabs.Bypass:AddToggle("FlyProtectEnabled",    { Title = "Fly Protect",    Default = false, Callback = function(s) if s then initNewindexHook(); startFlyGuard() else stopFlyGuard() end end })
-Tabs.Bypass:AddToggle("GodProtectEnabled",    { Title = "God Protect",    Default = false, Callback = function(s) if s then initNewindexHook() end end })
-Tabs.Bypass:AddButton({
-    Title    = "Disconnect AC Signals",
-    Callback = function()
-        local count = disconnectACSignals()
-        Fluent:Notify({ Title = "Signal Blocker", Content = "Sinais de AC desconectados: " .. count, Duration = 4 })
-    end,
-})
-
-Tabs.Bypass:AddSection("General Spoof")
-Tabs.Bypass:AddButton({
-    Title    = "Activate All Spoofs",
-    Callback = function()
-        local keys = {
-            "GameBypassEnabled","AntiKickBanEnabled","ACBreakerEnabled",
-            "AntiCheatMonitor","AntiCheatRemoteBlock",
-            "SpeedProtectEnabled","SpeedSpoofEnabled",
-            "NoClipProtectEnabled","FlyProtectEnabled","GodProtectEnabled",
-        }
-        for _, k in ipairs(keys) do if Options[k] then Options[k]:SetValue(true) end end
-        disconnectACSignals()
-        Fluent:Notify({ Title = "General Spoof", Content = "Todos os spoofs e proteções ativados!", Duration = 5 })
-    end,
-})
-
-Tabs.Bypass:AddSection("Fake Lag")
-Tabs.Bypass:AddToggle("FakeLagEnabled", {
-    Title    = "Lag Switch",
-    Default  = false,
-    Callback = function(state)
-        local hrp = getHRP(); if not hrp then return end
-        hrp.Anchored = state
-        Fluent:Notify({ Title = "Lag Switch", Content = state and "Lag Switch ativado." or "Lag Switch desativado.", Duration = 3 })
-    end,
-})
-
 local touchFlingActive  = false
 local flingLoopRunning  = false
 local flingAllActive    = false
 local flingActive       = false
 local flingOldPos       = nil
 local fallenPartsHeight = workspace.FallenPartsDestroyHeight
+
+local function setNoClipState(state)
+    Options.NoClipEnabled:SetValue(state)
+end
 
 local function runTouchFling()
     if flingLoopRunning then return end
@@ -1308,10 +996,6 @@ local function runTouchFling()
     flingLoopRunning = false
 end
 
-local function setNoClipState(state)
-    Options.NoClipEnabled:SetValue(state); applyNoClip()
-end
-
 local function skidFling(target)
     local char  = getChar()
     local hum   = char and char:FindFirstChildOfClass("Humanoid")
@@ -1330,7 +1014,7 @@ local function skidFling(target)
     Camera.CameraSubject = tHRP or tHead or tHum
     if not tChar:FindFirstChildWhichIsA("BasePart") then return end
 
-    local vMult = opt("FlingVelocity") or 1
+    local vMult = 1
 
     local function fpos(base, pos, ang)
         hrp.CFrame                  = CFrame.new(base.Position) * pos * ang
@@ -1415,7 +1099,7 @@ local function setupAntiFling()
     clearNCCs(); disconnectAll(antiFlingConns)
     antiFlingConns[#antiFlingConns + 1] = RunService.Heartbeat:Connect(function()
         local hrp   = getHRP(); if not hrp then return end
-        local limit = opt("AntiFlingThreshold") or 80
+        local limit = 80
         if hrp.AssemblyLinearVelocity.Magnitude > limit then
             hrp.AssemblyLinearVelocity  = Vector3.zero
             hrp.AssemblyAngularVelocity = Vector3.zero
@@ -1440,50 +1124,324 @@ local function cleanupAntiFling()
     disconnectAll(antiFlingConns); clearNCCs()
 end
 
+local waypoints     = {}
+local waypointCount = 0
+local waypointDrop  = nil
+
+Tabs.Player:AddSection("Teleport to Player")
+local playerTPDrop = Tabs.Player:AddDropdown("PlayerTPTarget", { Title = "Select Player", Values = playerList(), Multi = false, Default = 1 })
+playerDropdowns[#playerDropdowns + 1] = playerTPDrop
+Tabs.Player:AddButton({
+    Title = "Teleport",
+    Callback = function()
+        local name = opt("PlayerTPTarget")
+        if not name or name == "(none)" then return end
+        local target = Players:FindFirstChild(name)
+        if not target or not target.Character then notify({ Title = "Player TP", Content = "Jogador não encontrado.", Duration = 3 }); return end
+        local tHRP = target.Character:FindFirstChild("HumanoidRootPart")
+        local hrp  = getHRP()
+        if tHRP and hrp then hrp.CFrame = tHRP.CFrame * CFrame.new(3, 0, 0); notify({ Title = "Player TP", Content = "Teleportado para " .. name, Duration = 3 }) end
+    end,
+})
+
+Tabs.Player:AddSection("Spectate")
+local playerSpyDrop = Tabs.Player:AddDropdown("PlayerSpyTarget", { Title = "Spy on Player", Values = playerList(), Multi = false, Default = 1 })
+playerDropdowns[#playerDropdowns + 1] = playerSpyDrop
+Tabs.Player:AddToggle("SpyEnabled", { Title = "Enable Spectate", Default = false, Callback = function(s) if s then startSpy() else stopSpy() end end })
+playerSpyDrop:OnChanged(function() if opt("SpyEnabled") then startSpy() end end)
+
+Tabs.Movement:AddSection("Movement")
+Tabs.Movement:AddToggle("SpeedEnabled", { Title = "Speed Hack", Default = false, Callback = function(s) F.speed = s; applySpeed() end })
+Tabs.Movement:AddSlider("SpeedValue", { Title = "Walk Speed", Default = 50, Min = 16, Max = 300, Rounding = 0, Callback = function() applySpeed() end })
+Tabs.Movement:AddToggle("NoClipEnabled", { Title = "NoClip", Default = false, Callback = function(s) F.noclip = s; if s then applyNoClip() else restoreNoClip() end end })
+Tabs.Movement:AddToggle("InfinityJumpEnabled", { Title = "Infinity Jump", Default = false, Callback = function(s) if s then enableInfinityJump() else disableInfinityJump() end end })
+Tabs.Movement:AddToggle("WalkOnAirEnabled", { Title = "Levitation", Default = false, Callback = function(s) if s then enableWalkOnAir() else disableWalkOnAir() end end })
+
+Tabs.Movement:AddSection("Fly")
+Tabs.Movement:AddToggle("FlyEnabled", { Title = "Fly", Default = false, Callback = function(s) F.fly = s; if s then enableFly() else disableFly() end end })
+Tabs.Movement:AddSlider("FlySpeed", { Title = "Fly Speed", Default = 50, Min = 10, Max = 300, Rounding = 0, Callback = function() end })
+Tabs.Movement:AddToggle("VehicleFlyEnabled", { Title = "Vehicle Fly", Default = false, Callback = function(s) if s then enableVehicleFly() else disableVehicleFly() end end })
+Tabs.Movement:AddSlider("VehicleFlySpeed", { Title = "Vehicle Fly Speed", Default = 100, Min = 10, Max = 500, Rounding = 0, Callback = function() end })
+
+Tabs.Movement:AddSection("Teleport")
+Tabs.Movement:AddToggle("ClickTPEnabled", { Title = "Click TP", Default = false, Callback = function() end })
+Tabs.Movement:AddButton({
+    Title = "TP to Spawn",
+    Callback = function()
+        local hrp = getHRP(); if not hrp then return end
+        local spawn = workspace:FindFirstChildOfClass("SpawnLocation")
+        if not spawn then
+            for _, v in ipairs(workspace:GetDescendants()) do
+                if v:IsA("SpawnLocation") then spawn = v; break end
+            end
+        end
+        if spawn then
+            hrp.CFrame = CFrame.new(spawn.Position + Vector3.new(0, 3, 0))
+            notify({ Title = "TP to Spawn", Content = "Teletransportado para o spawn.", Duration = 3 })
+        else
+            notify({ Title = "TP to Spawn", Content = "Spawn não encontrado.", Duration = 3 })
+        end
+    end,
+})
+
+Tabs.Movement:AddSection("Waypoints")
+Tabs.Movement:AddInput("WaypointName", { Title = "Waypoint Name", Placeholder = "Nome do waypoint", Numeric = false, Finished = false, Callback = function() end })
+Tabs.Movement:AddButton({
+    Title = "Save Waypoint",
+    Callback = function()
+        local hrp = getHRP(); if not hrp then return end
+        local name = opt("WaypointName")
+        if not name or name == "" then waypointCount += 1; name = "WP" .. waypointCount end
+        waypoints[name] = hrp.CFrame
+        local keys = {}
+        for k in pairs(waypoints) do keys[#keys + 1] = k end
+        if waypointDrop then pcall(function() waypointDrop:SetValues(keys) end) end
+        notify({ Title = "Waypoints", Content = "Waypoint '" .. name .. "' salvo!", Duration = 3 })
+    end,
+})
+waypointDrop = Tabs.Movement:AddDropdown("WaypointSelect", { Title = "Select Waypoint", Values = {}, Multi = false, Default = nil, Callback = function() end })
+Tabs.Movement:AddButton({
+    Title = "Teleport to Waypoint",
+    Callback = function()
+        local sel = opt("WaypointSelect")
+        if not sel or sel == "" then notify({ Title = "Waypoints", Content = "Selecione um waypoint.", Duration = 3 }); return end
+        local cf = waypoints[sel]
+        if not cf then notify({ Title = "Waypoints", Content = "Waypoint não encontrado.", Duration = 3 }); return end
+        local hrp = getHRP()
+        if hrp then hrp.CFrame = cf; notify({ Title = "Waypoints", Content = "Teleportado para '" .. sel .. "'.", Duration = 3 }) end
+    end,
+})
+Tabs.Movement:AddButton({
+    Title = "Delete Waypoint",
+    Callback = function()
+        local sel = opt("WaypointSelect")
+        if not sel or sel == "" then notify({ Title = "Waypoints", Content = "Selecione um waypoint.", Duration = 3 }); return end
+        waypoints[sel] = nil
+        local keys = {}
+        for k in pairs(waypoints) do keys[#keys + 1] = k end
+        if waypointDrop then pcall(function() waypointDrop:SetValues(keys) end) end
+        notify({ Title = "Waypoints", Content = "Waypoint '" .. sel .. "' deletado.", Duration = 3 })
+    end,
+})
+
+Tabs.Movement:AddSection("Misc")
+Tabs.Movement:AddToggle("AntiAFKEnabled", { Title = "Anti-AFK", Default = false, Callback = function() end })
+
+UserInputService.InputBegan:Connect(function(input, processed)
+    if processed or input.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
+    if not opt("ClickTPEnabled") then return end
+    local params = RaycastParams.new()
+    params.FilterDescendantsInstances = { getChar() }
+    params.FilterType = Enum.RaycastFilterType.Exclude
+    local ray    = Camera:ScreenPointToRay(input.Position.X, input.Position.Y)
+    local result = workspace:Raycast(ray.Origin, ray.Direction * 2000, params)
+    if result then
+        local hrp = getHRP()
+        if hrp then hrp.CFrame = CFrame.new(result.Position + Vector3.new(0, 3, 0)) end
+    end
+end)
+
+LocalPlayer.Idled:Connect(function()
+    if opt("AntiAFKEnabled") then
+        pcall(function() VirtualUser:CaptureController(); VirtualUser:ClickButton2(Vector2.new()) end)
+    end
+end)
+
+Tabs.Visuals:AddSection("Player ESP")
+Tabs.Visuals:AddToggle("ESPEnabled",   { Title = "Enable ESP", Default = false, Callback = function() onESPToggle() end })
+Tabs.Visuals:AddToggle("ESPTeamCheck", { Title = "Team Check", Default = false, Callback = function() end })
+Tabs.Visuals:AddToggle("ESPNameTags",  { Title = "Name Tags",  Default = false, Callback = function() onESPToggle() end })
+Tabs.Visuals:AddToggle("ESPHealthBar", { Title = "Health Bar", Default = false, Callback = function() onESPToggle() end })
+Tabs.Visuals:AddColorpicker("ESPFillColor", { Title = "ESP Color", Default = Color3.fromRGB(255, 50, 50) })
+
+Tabs.Visuals:AddSection("Lighting")
+Tabs.Visuals:AddToggle("FullbrightEnabled",    { Title = "Fullbright",     Default = false, Callback = setFullbright })
+Tabs.Visuals:AddToggle("NoFogEnabled",         { Title = "No Fog",         Default = false, Callback = setNoFog })
+Tabs.Visuals:AddToggle("RemoveEffectsEnabled", { Title = "Remove Effects", Default = false, Callback = setRemoveEffects })
+
+local GuiService = game:GetService("GuiService")
+
+local function getTargetPart(char, partName)
+    if partName == "Head" then
+        return char:FindFirstChild("Head")
+    elseif partName == "Torso" then
+        return char:FindFirstChild("UpperTorso") or char:FindFirstChild("Torso") or char:FindFirstChild("HumanoidRootPart")
+    end
+    return char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("UpperTorso") or char:FindFirstChild("Torso")
+end
+
+local function isVisible(part)
+    local origin = workspace.CurrentCamera.CFrame.Position
+    local params = RaycastParams.new()
+    params.FilterType = Enum.RaycastFilterType.Exclude
+    params.FilterDescendantsInstances = { getChar(), workspace.CurrentCamera }
+    local res = workspace:Raycast(origin, part.Position - origin, params)
+    return (not res) or res.Instance:IsDescendantOf(part.Parent)
+end
+
+local function pickTarget(partName, teamCheck, wallCheck, fov, fromMouse)
+    local cam = workspace.CurrentCamera
+    local ref
+    if fromMouse then
+        local mp = UserInputService:GetMouseLocation()
+        local inset = GuiService:GetGuiInset()
+        ref = Vector2.new(mp.X, mp.Y - inset.Y)
+    else
+        ref = cam.ViewportSize / 2
+    end
+    local best, bestPart, bestDist = nil, nil, fov or math.huge
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer then
+            local char = p.Character
+            local hum  = char and char:FindFirstChildOfClass("Humanoid")
+            if hum and hum.Health > 0 and not (teamCheck and p.Team == LocalPlayer.Team) then
+                local part = getTargetPart(char, partName)
+                if part then
+                    local sp, onScreen = cam:WorldToViewportPoint(part.Position)
+                    if onScreen then
+                        local d = (Vector2.new(sp.X, sp.Y) - ref).Magnitude
+                        if d < bestDist and (not wallCheck or isVisible(part)) then
+                            best, bestPart, bestDist = p, part, d
+                        end
+                    end
+                end
+            end
+        end
+    end
+    return best, bestPart
+end
+
+function getSilentTarget()
+    if not F.silentAim then return nil end
+    return pickTarget(opt("SilentAimPart") or "Head", opt("SilentAimTeamCheck"), opt("SilentAimWallCheck"), opt("SilentAimFOV") or 9999, true)
+end
+
+local fovGui, fovCircle
+local function ensureFovCircle()
+    if fovGui and fovGui.Parent then return end
+    fovGui = Instance.new("ScreenGui")
+    fovGui.Name = _TAG .. _RS(3)
+    fovGui.IgnoreGuiInset = true
+    fovGui.ResetOnSpawn = false
+    fovGui.DisplayOrder = 9998
+    pcall(function() if gethui then fovGui.Parent = gethui() end end)
+    if not fovGui.Parent then pcall(function() fovGui.Parent = LocalPlayer:FindFirstChildOfClass("PlayerGui") end) end
+    fovCircle = Instance.new("Frame")
+    fovCircle.Name = "FOV"
+    fovCircle.AnchorPoint = Vector2.new(0.5, 0.5)
+    fovCircle.BackgroundTransparency = 1
+    fovCircle.BorderSizePixel = 0
+    fovCircle.Parent = fovGui
+    local corner = Instance.new("UICorner"); corner.CornerRadius = UDim.new(1, 0); corner.Parent = fovCircle
+    local stroke = Instance.new("UIStroke"); stroke.Thickness = 1.5; stroke.Color = Color3.fromRGB(255, 255, 255); stroke.Transparency = 0.15; stroke.Parent = fovCircle
+end
+
+local aimKeybind
+
+Tabs.Combat:AddSection("Aimbot")
+Tabs.Combat:AddToggle("AimbotEnabled", { Title = "Aimbot", Default = false })
+aimKeybind = Tabs.Combat:AddKeybind("AimbotKey", { Title = "Aim Key (hold)", Mode = "Hold", Default = "E" })
+Tabs.Combat:AddDropdown("AimbotPart", { Title = "Target Part", Values = { "Head", "Torso", "HumanoidRootPart" }, Multi = false, Default = 1 })
+Tabs.Combat:AddToggle("AimbotTeamCheck", { Title = "Team Check", Default = true })
+Tabs.Combat:AddToggle("AimbotWallCheck", { Title = "Visible Check (walls)", Default = false })
+Tabs.Combat:AddSlider("AimbotFOV", { Title = "FOV", Default = 120, Min = 20, Max = 500, Rounding = 0, Callback = function() end })
+Tabs.Combat:AddSlider("AimbotSmooth", { Title = "Smoothness", Default = 0.6, Min = 0, Max = 0.95, Rounding = 2, Callback = function() end })
+Tabs.Combat:AddToggle("AimbotFOVCircle", { Title = "Show FOV Circle", Default = false })
+
+Tabs.Combat:AddSection("Silent Aim")
+Tabs.Combat:AddToggle("SilentAimEnabled", {
+    Title = "Silent Aim",
+    Default = false,
+    Callback = function(s)
+        F.silentAim = s
+        if s and not initIndexHook() then
+            notify({ Title = "Silent Aim", Content = "Executor não suporta metamétodos.", Duration = 4 })
+        end
+    end,
+})
+Tabs.Combat:AddDropdown("SilentAimPart", { Title = "Target Part", Values = { "Head", "Torso", "HumanoidRootPart" }, Multi = false, Default = 1 })
+Tabs.Combat:AddToggle("SilentAimTeamCheck", { Title = "Team Check", Default = true })
+Tabs.Combat:AddToggle("SilentAimWallCheck", { Title = "Visible Check (walls)", Default = false })
+Tabs.Combat:AddSlider("SilentAimFOV", { Title = "FOV", Default = 150, Min = 30, Max = 2000, Rounding = 0, Callback = function() end })
+
+Tabs.Combat:AddSection("Triggerbot")
+Tabs.Combat:AddToggle("TriggerbotEnabled", { Title = "Triggerbot", Default = false })
+Tabs.Combat:AddToggle("TriggerTeamCheck", { Title = "Team Check", Default = true })
+Tabs.Combat:AddSlider("TriggerDelay", { Title = "Delay (s)", Default = 0.1, Min = 0, Max = 1, Rounding = 2, Callback = function() end })
+
+RunService.RenderStepped:Connect(function()
+    local cam = workspace.CurrentCamera
+    if opt("AimbotFOVCircle") then
+        ensureFovCircle()
+        local r = opt("AimbotFOV") or 120
+        fovCircle.Visible = true
+        fovCircle.Size = UDim2.fromOffset(r * 2, r * 2)
+        fovCircle.Position = UDim2.fromOffset(cam.ViewportSize.X / 2, cam.ViewportSize.Y / 2)
+    elseif fovCircle then
+        fovCircle.Visible = false
+    end
+
+    if not opt("AimbotEnabled") then return end
+    if not (aimKeybind and aimKeybind:GetState()) then return end
+    local _, part = pickTarget(opt("AimbotPart") or "Head", opt("AimbotTeamCheck"), opt("AimbotWallCheck"), opt("AimbotFOV") or 120, false)
+    if part then
+        local smooth = opt("AimbotSmooth") or 0.6
+        local alpha  = math.clamp(1 - smooth, 0.03, 1)
+        local goal   = CFrame.new(cam.CFrame.Position, part.Position)
+        cam.CFrame   = cam.CFrame:Lerp(goal, alpha)
+    end
+end)
+
+local lastShot = 0
+RunService.Heartbeat:Connect(function()
+    if not opt("TriggerbotEnabled") then return end
+    local now = tick()
+    if now - lastShot < (opt("TriggerDelay") or 0.1) then return end
+    local _, part = pickTarget(opt("AimbotPart") or "Head", opt("TriggerTeamCheck"), true, 8, false)
+    if part then
+        if mouse1press and mouse1release then
+            mouse1press(); task.wait(0.02); mouse1release()
+            lastShot = now
+        end
+    end
+end)
+
 Tabs.Fling:AddSection("Fling Target")
 local flingTargetDrop = Tabs.Fling:AddDropdown("FlingTargetPlayer", { Title = "Select Target", Values = playerList(), Multi = false, Default = 1, Callback = function() end })
+playerDropdowns[#playerDropdowns + 1] = flingTargetDrop
 Tabs.Fling:AddButton({
-    Title    = "Fling Target",
+    Title = "Fling Target",
     Callback = function()
         local name = opt("FlingTargetPlayer")
-        if not name or name == "(none)" then Fluent:Notify({ Title = "Fling Target", Content = "Selecione um alvo.", Duration = 3 }); return end
+        if not name or name == "(none)" then notify({ Title = "Fling", Content = "Selecione um alvo.", Duration = 3 }); return end
         local target = Players:FindFirstChild(name)
-        if not target then Fluent:Notify({ Title = "Fling Target", Content = "Jogador não encontrado.", Duration = 3 }); return end
+        if not target then notify({ Title = "Fling", Content = "Jogador não encontrado.", Duration = 3 }); return end
         task.spawn(skidFling, target)
     end,
 })
-Tabs.Fling:AddButton({
-    Title    = "Refresh Targets",
-    Callback = function() pcall(function() flingTargetDrop:SetValues(playerList()) end) end,
-})
 
-Tabs.Fling:AddSection("Fling Velocity")
-Tabs.Fling:AddSlider("FlingVelocity", { Title = "Velocity Multiplier", Default = 1, Min = 0.1, Max = 5, Rounding = 1, Callback = function() end })
-
-Tabs.Fling:AddSection("Touch Fling")
+Tabs.Fling:AddSection("Mass Fling")
 Tabs.Fling:AddToggle("TouchFlingEnabled", {
-    Title    = "Touch Fling",
-    Default  = false,
+    Title = "Touch Fling",
+    Default = false,
     Callback = function(state)
         touchFlingActive = state
         if state then
             setNoClipState(true)
             if not flingLoopRunning then task.spawn(runTouchFling) end
-        else
-            if not opt("FlingAllEnabled") then setNoClipState(false) end
+        elseif not opt("FlingAllEnabled") then
+            setNoClipState(false)
         end
     end,
 })
-
-Tabs.Fling:AddSection("Fling All")
 Tabs.Fling:AddToggle("FlingAllEnabled", {
-    Title    = "Fling All",
-    Default  = false,
+    Title = "Fling All",
+    Default = false,
     Callback = function(state)
         flingAllActive = state
         if state then
             setNoClipState(true)
-            Fluent:Notify({ Title = "Fling All", Content = "Fling All ativado.", Duration = 3 })
+            notify({ Title = "Fling All", Content = "Fling All ativado.", Duration = 3 })
             task.spawn(function()
                 while flingAllActive do
                     local targets = {}
@@ -1500,27 +1458,156 @@ Tabs.Fling:AddToggle("FlingAllEnabled", {
                 end
                 if not opt("TouchFlingEnabled") then setNoClipState(false) end
             end)
-        else
-            if not opt("TouchFlingEnabled") then setNoClipState(false) end
+        elseif not opt("TouchFlingEnabled") then
+            setNoClipState(false)
         end
     end,
 })
 
 Tabs.Fling:AddSection("Anti-Fling")
-Tabs.Fling:AddToggle("AntiFlingEnabled", {
-    Title    = "Anti-Fling",
-    Default  = false,
-    Callback = function(state) if state then setupAntiFling() else cleanupAntiFling() end end,
+Tabs.Fling:AddToggle("AntiFlingEnabled", { Title = "Anti-Fling", Default = false, Callback = function(state) if state then setupAntiFling() else cleanupAntiFling() end end })
+
+Tabs.Bypass:AddSection("Protection")
+Tabs.Bypass:AddParagraph({
+    Title = "Status",
+    Content = "As proteções vêm DESATIVADAS por padrão para máxima\nfluidez. Ative manualmente as que quiser, ou use o botão\nabaixo para ligar todas de uma vez.",
 })
-Tabs.Fling:AddSlider("AntiFlingThreshold", { Title = "Velocity Limit", Default = 80, Min = 20, Max = 300, Rounding = 0, Callback = function() end })
+Tabs.Bypass:AddButton({
+    Title = "Activate All Protections",
+    Callback = function()
+        for _, k in ipairs({
+            "GameBypassEnabled","AntiKickBanEnabled","AntiCheatRemoteBlock",
+            "ACBreakerEnabled","AntiCheatMonitor",
+        }) do
+            if Options[k] then Options[k]:SetValue(true) end
+        end
+        disconnectACSignals()
+        notify({ Title = "Bypass", Content = "Todas as proteções ativadas!", Duration = 5 })
+    end,
+})
+
+Tabs.Bypass:AddSection("Anti-Cheat")
+Tabs.Bypass:AddToggle("GameBypassEnabled", {
+    Title = "Fingerprint Wipe",
+    Default = false,
+    Callback = function(state)
+        if not state then return end
+        local ok, wiped, spoofed = runGameBypass()
+        notify({
+            Title = "Fingerprint Wipe",
+            Content = ok and "Bypass aplicado com sucesso." or "Executor não suporta getgenv().",
+            SubContent = ok and ("Globals apagadas: " .. wiped .. "  |  Funções falsificadas: " .. spoofed) or nil,
+            Duration = 5,
+        })
+    end,
+})
+Tabs.Bypass:AddToggle("AntiCheatRemoteBlock", {
+    Title = "Remote Report Block",
+    Default = false,
+    Callback = function(state)
+        F.remoteBlock = state
+        if state then
+            local ok = initNamecallHook()
+            notify({ Title = "Remote Report Block", Content = ok and "Ativo — remotes de AC bloqueadas." or "Executor sem suporte.", Duration = 4 })
+        end
+    end,
+})
+Tabs.Bypass:AddToggle("ACBreakerEnabled", {
+    Title = "Anti-Cheat Breaker (pesado)",
+    Default = false,
+    Callback = function(state)
+        if state then
+            F.remoteBlock = true; initNamecallHook()
+            if Options.AntiCheatRemoteBlock then Options.AntiCheatRemoteBlock:SetValue(true) end
+            local r = runFullScan()
+            startBreakerMonitor()
+            notify({
+                Title = "Anti-Cheat Breaker",
+                Content = "Ativo — anti-cheat destruído em todos os serviços.",
+                SubContent = "Desativados: " .. r.disabled .. "  |  Destruídos: " .. r.destroyed .. (r.conns > 0 and ("  |  Signals: " .. r.conns) or ""),
+                Duration = 6,
+            })
+        else
+            stopBreakerMonitor()
+            notify({ Title = "Anti-Cheat Breaker", Content = "Monitor desativado.", Duration = 3 })
+        end
+    end,
+})
+Tabs.Bypass:AddToggle("AntiCheatMonitor", {
+    Title = "Anti-Cheat Monitor",
+    Default = false,
+    Callback = function(state)
+        if state then runPlayerScan(); startACMonitor(); notify({ Title = "Anti-Cheat Monitor", Content = "Monitor ativo.", Duration = 4 })
+        else stopACMonitor() end
+    end,
+})
+Tabs.Bypass:AddButton({
+    Title = "Full Scan & Disable",
+    Callback = function()
+        local r = runPlayerScan(); initNamecallHook()
+        notify({
+            Title = "Anti-Cheat Scan",
+            Content = "Scan concluído.",
+            SubContent = "Scripts desativados: " .. r.disabled .. "  |  Remotes removidas: " .. r.destroyed,
+            Duration = 5,
+        })
+    end,
+})
+
+Tabs.Bypass:AddSection("Anti-Kick & Ban")
+Tabs.Bypass:AddToggle("AntiKickBanEnabled", {
+    Title = "Anti-Kick & Ban",
+    Default = false,
+    Callback = function(state)
+        F.antiKickBan = state
+        if state then
+            local ok = initNamecallHook()
+            notify({ Title = "Anti-Kick & Ban", Content = ok and "Ativo — kicks e bans bloqueados." or "Executor sem suporte a metamétodos.", Duration = 5 })
+        else
+            notify({ Title = "Anti-Kick & Ban", Content = "Desativado.", Duration = 4 })
+        end
+    end,
+})
+Tabs.Bypass:AddButton({
+    Title = "Destroy Kick/Ban Remotes",
+    Callback = function()
+        local removed = destroyKickBanRemotes()
+        notify({ Title = "Anti-Kick & Ban", Content = "Remotes destruídas: " .. removed, Duration = 4 })
+    end,
+})
+
+Tabs.Bypass:AddSection("Misc")
+Tabs.Bypass:AddToggle("FakeLagEnabled", {
+    Title = "Lag Switch",
+    Default = false,
+    Callback = function(state)
+        local hrp = getHRP(); if not hrp then return end
+        hrp.Anchored = state
+        notify({ Title = "Lag Switch", Content = state and "Lag Switch ativado." or "Lag Switch desativado.", Duration = 3 })
+    end,
+})
 
 Tabs.External:AddSection("External Scripts")
-Tabs.External:AddParagraph({ Title = "Aviso", Content = "Estes scripts são de terceiros carregados via HttpGet.\nUse com responsabilidade." })
+Tabs.External:AddParagraph({ Title = "Aviso", Content = "Scripts de terceiros carregados via HttpGet.\nUse com responsabilidade." })
 Tabs.External:AddButton({
-    Title    = "Infinity Yield",
+    Title = "Infinity Yield",
     Callback = function()
-        Fluent:Notify({ Title = "Infinity Yield", Content = "Carregando Infinity Yield...", Duration = 3 })
+        notify({ Title = "Infinity Yield", Content = "Carregando...", Duration = 3 })
         task.spawn(function() loadstring(game:HttpGet("https://raw.githubusercontent.com/EdgeIY/infiniteyield/master/source"))() end)
+    end,
+})
+Tabs.External:AddButton({
+    Title = "Dex Explorer",
+    Callback = function()
+        notify({ Title = "Dex Explorer", Content = "Carregando...", Duration = 3 })
+        task.spawn(function() loadstring(game:HttpGet("https://raw.githubusercontent.com/infyiff/backup/main/dex.lua"))() end)
+    end,
+})
+Tabs.External:AddButton({
+    Title = "Remote Spy (SimpleSpy)",
+    Callback = function()
+        notify({ Title = "SimpleSpy", Content = "Carregando...", Duration = 3 })
+        task.spawn(function() loadstring(game:HttpGet("https://raw.githubusercontent.com/exxtremestuffs/SimpleSpySource/master/SimpleSpy.lua"))() end)
     end,
 })
 
@@ -1529,25 +1616,14 @@ LocalPlayer.CharacterAdded:Connect(function(char)
     protectHumanoid = char:FindFirstChildOfClass("Humanoid")
     protectHRP      = char:FindFirstChild("HumanoidRootPart")
 
-    applySpeed(); applyNoClip(); refreshESP()
+    applySpeed()
+    if F.noclip then applyNoClip() end
 
-    if opt("FlyEnabled")          then enableFly()          end
+    if F.fly                      then enableFly()          end
     if opt("VehicleFlyEnabled")   then enableVehicleFly()   end
     if opt("InfinityJumpEnabled") then enableInfinityJump() end
     if opt("WalkOnAirEnabled")    then enableWalkOnAir()    end
     if touchFlingActive and not flingLoopRunning then task.spawn(runTouchFling) end
-
-    local hum = protectHumanoid
-    if hum then
-        if opt("GodForcefield") then
-            local ff = Instance.new("ForceField"); ff.Name = _FF_NAME; ff.Visible = false; ff.Parent = char
-        end
-        if opt("GodMaxHealth") then hum.MaxHealth = math.huge; hum.Health = math.huge end
-        if opt("GodDeadState") then pcall(function() hum:SetStateEnabled(Enum.HumanoidStateType.Dead, false) end) end
-    end
-
-    if opt("AntiRagdollEnabled")    then applyAntiRagdoll()    end
-    if opt("AntiFallDamageEnabled") then setupAntiFallDamage() end
 
     if opt("AntiFlingEnabled") then
         clearNCCs()
@@ -1558,12 +1634,6 @@ LocalPlayer.CharacterAdded:Connect(function(char)
 
     if protectHRP then protectHRP.Anchored = false end
     if opt("FakeLagEnabled") then Options.FakeLagEnabled:SetValue(false) end
-
-    task.spawn(function()
-        task.wait(0.3)
-        disconnectACSignals()
-        if opt("FlyProtectEnabled") then startFlyGuard() end
-    end)
 end)
 
 do
@@ -1575,22 +1645,171 @@ do
 end
 
 RunService.Stepped:Connect(function()
-    if opt("NoClipEnabled") then applyNoClip() end
+    if F.noclip then applyNoClip() end
 end)
 
-RunService.Heartbeat:Connect(function()
-    local hum = protectHumanoid; if not hum or not hum.Parent then return end
-    if opt("GodHealthRestore") then hum.Health = hum.MaxHealth end
-    if opt("GodMaxHealth") and hum.MaxHealth ~= math.huge then hum.MaxHealth = math.huge; hum.Health = math.huge end
+local function serverHop()
+    notify({ Title = "Server Hop", Content = "Procurando outro servidor...", Duration = 3 })
+    task.spawn(function()
+        local placeId = game.PlaceId
+        local found, cursor, pages = {}, nil, 0
+        repeat
+            pages += 1
+            local url = "https://games.roblox.com/v1/games/" .. placeId .. "/servers/Public?sortOrder=Desc&limit=100"
+            if cursor then url = url .. "&cursor=" .. cursor end
+            local ok, body = pcall(httpGet, url)
+            if not ok then break end
+            local ok2, data = pcall(function() return HttpService:JSONDecode(body) end)
+            if not ok2 or not data or not data.data then break end
+            for _, s in ipairs(data.data) do
+                if s.id ~= game.JobId and tonumber(s.playing or 0) < tonumber(s.maxPlayers or 0) then
+                    found[#found + 1] = s.id
+                end
+            end
+            cursor = data.nextPageCursor
+        until (not cursor) or #found >= 50 or pages >= 5
+        if #found == 0 then
+            notify({ Title = "Server Hop", Content = "Nenhum servidor disponível encontrado.", Duration = 4 })
+            return
+        end
+        local target = found[math.random(1, #found)]
+        local ok = pcall(function() TeleportService:TeleportToPlaceInstance(placeId, target, LocalPlayer) end)
+        if not ok then notify({ Title = "Server Hop", Content = "Falha ao teleportar.", Duration = 4 }) end
+    end)
+end
+
+TeleportService.TeleportInitFailed:Connect(function(_, result)
+    if result == Enum.TeleportResult.Flooded or result == Enum.TeleportResult.GameFull or result == Enum.TeleportResult.Failure then
+        task.wait(2); serverHop()
+    end
 end)
+
+local statsActive = false
+local statsGui, statsRenderConn, fpsLabel, pingLabel
+
+local function stopStats()
+    statsActive = false
+    if statsRenderConn then statsRenderConn:Disconnect(); statsRenderConn = nil end
+    if statsGui then statsGui:Destroy(); statsGui = nil end
+    fpsLabel, pingLabel = nil, nil
+end
+
+local function getPing()
+    local ok, ping = pcall(function()
+        return math.floor(Stats.Network.ServerStatsItem["Data Ping"]:GetValue() + 0.5)
+    end)
+    return ok and ping or 0
+end
+
+local function startStats()
+    stopStats()
+    statsActive = true
+
+    statsGui = Instance.new("ScreenGui")
+    statsGui.Name = _TAG .. _RS(3)
+    statsGui.ResetOnSpawn = false
+    statsGui.IgnoreGuiInset = true
+    statsGui.DisplayOrder = 9999
+    statsGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    pcall(function() if gethui then statsGui.Parent = gethui() end end)
+    if not statsGui.Parent then
+        pcall(function() statsGui.Parent = LocalPlayer:FindFirstChildOfClass("PlayerGui") end)
+    end
+
+    local frame = Instance.new("Frame")
+    frame.AnchorPoint = Vector2.new(0.5, 0)
+    frame.Position = UDim2.new(0.5, 0, 0, 6)
+    frame.Size = UDim2.new(0, 0, 0, 30)
+    frame.AutomaticSize = Enum.AutomaticSize.X
+    frame.BackgroundColor3 = Color3.fromRGB(18, 18, 22)
+    frame.BackgroundTransparency = 0.15
+    frame.BorderSizePixel = 0
+    frame.Parent = statsGui
+
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 8)
+    corner.Parent = frame
+
+    local stroke = Instance.new("UIStroke")
+    stroke.Thickness = 1
+    stroke.Color = Color3.fromRGB(0, 0, 0)
+    stroke.Transparency = 0.3
+    stroke.Parent = frame
+
+    local grad = Instance.new("UIGradient")
+    grad.Rotation = 90
+    grad.Color = ColorSequence.new(Color3.fromRGB(34, 34, 42), Color3.fromRGB(16, 16, 20))
+    grad.Parent = frame
+
+    local padding = Instance.new("UIPadding")
+    padding.PaddingLeft = UDim.new(0, 12)
+    padding.PaddingRight = UDim.new(0, 12)
+    padding.Parent = frame
+
+    local layout = Instance.new("UIListLayout")
+    layout.FillDirection = Enum.FillDirection.Horizontal
+    layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+    layout.VerticalAlignment = Enum.VerticalAlignment.Center
+    layout.Padding = UDim.new(0, 16)
+    layout.Parent = frame
+
+    local function mkLabel()
+        local l = Instance.new("TextLabel")
+        l.AutomaticSize = Enum.AutomaticSize.X
+        l.Size = UDim2.new(0, 0, 1, 0)
+        l.BackgroundTransparency = 1
+        l.Font = Enum.Font.GothamBold
+        l.TextSize = 14
+        l.TextColor3 = Color3.fromRGB(240, 240, 240)
+        l.Text = ""
+        l.Parent = frame
+        return l
+    end
+
+    fpsLabel  = mkLabel()
+    pingLabel = mkLabel()
+
+    local accum, frames = 0, 0
+    statsRenderConn = RunService.RenderStepped:Connect(function(dt)
+        accum += dt; frames += 1
+        if accum >= 0.5 and fpsLabel then
+            local fps = math.floor(frames / accum + 0.5)
+            accum, frames = 0, 0
+            fpsLabel.Text = "FPS  " .. fps
+            fpsLabel.TextColor3 = fps >= 50 and Color3.fromRGB(120, 235, 140)
+                or fps >= 30 and Color3.fromRGB(245, 215, 110)
+                or Color3.fromRGB(245, 110, 110)
+        end
+    end)
+
+    task.spawn(function()
+        while statsActive and statsGui and statsGui.Parent do
+            if pingLabel then
+                local p = getPing()
+                pingLabel.Text = "Ping  " .. p .. " ms"
+                pingLabel.TextColor3 = p <= 90 and Color3.fromRGB(120, 235, 140)
+                    or p <= 180 and Color3.fromRGB(245, 215, 110)
+                    or Color3.fromRGB(245, 110, 110)
+            end
+            task.wait(1)
+        end
+    end)
+end
 
 InterfaceManager:SetLibrary(Fluent)
 InterfaceManager:SetFolder("DarkHUB")
 InterfaceManager:BuildInterfaceSection(Tabs.Settings)
 
+Tabs.Settings:AddSection("Display")
+Tabs.Settings:AddToggle("StatsEnabled", {
+    Title = "Show Stats (Ping / FPS)",
+    Default = false,
+    Callback = function(s) if s then startStats() else stopStats() end end,
+})
+
 Tabs.Settings:AddSection("Server Info")
 Tabs.Settings:AddParagraph({
-    Title   = "Server Info",
+    Title = "Server Info",
     Content = "Place ID:  " .. game.PlaceId
         .. "\nGame ID:   " .. game.GameId
         .. "\nPlayers:   " .. #Players:GetPlayers() .. " / " .. Players.MaxPlayers,
@@ -1598,41 +1817,23 @@ Tabs.Settings:AddParagraph({
 
 Tabs.Settings:AddSection("Server Actions")
 Tabs.Settings:AddButton({
-    Title    = "Rejoin",
+    Title = "Rejoin",
     Callback = function()
-        Fluent:Notify({ Title = "Rejoin", Content = "Reconectando ao servidor...", Duration = 3 })
+        notify({ Title = "Rejoin", Content = "Reconectando ao servidor...", Duration = 3 })
         task.spawn(function() pcall(function() TeleportService:TeleportToPlaceInstance(game.PlaceId, game.JobId, LocalPlayer) end) end)
     end,
 })
-Tabs.Settings:AddButton({
-    Title    = "Server Hop",
-    Callback = function()
-        Fluent:Notify({ Title = "Server Hop", Content = "Procurando servidor alternativo...", Duration = 3 })
-        task.spawn(function()
-            local ok, found = pcall(function()
-                local data = HttpService:JSONDecode(HttpService:GetAsync(
-                    "https://games.roblox.com/v1/games/" .. game.PlaceId .. "/servers/Public?sortOrder=Asc&limit=100"
-                ))
-                for _, s in ipairs(data.data) do
-                    if s.id ~= game.JobId and s.playing < s.maxPlayers then
-                        TeleportService:TeleportToPlaceInstance(game.PlaceId, s.id, LocalPlayer)
-                        return true
-                    end
-                end
-                return false
-            end)
-            if not ok or not found then
-                Fluent:Notify({ Title = "Server Hop", Content = "Nenhum servidor alternativo encontrado.", Duration = 4 })
-            end
-        end)
-    end,
-})
+Tabs.Settings:AddButton({ Title = "Server Hop", Callback = serverHop })
 
 Window:SelectTab(1)
 
-Fluent:Notify({
-    Title      = "DarkHUB",
-    Content    = "Script carregado com sucesso!",
-    SubContent = "Universal Script",
-    Duration   = 5,
-})
+task.defer(function()
+    protectGui()
+    Booted = true
+    Fluent:Notify({
+        Title = "DarkHUB",
+        Content = "Script carregado com sucesso!",
+        SubContent = "Universal Script",
+        Duration = 6,
+    })
+end)
