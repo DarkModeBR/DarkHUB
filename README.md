@@ -1,13 +1,30 @@
 <div align="center">
 
-# 🌑 DarkHUB
+# 🌑 DarkHUB — Universal Script
 
-**Universal Script para Roblox — Poderoso, Modular e Furtivo**
+**Um hub universal para Roblox, leve, organizado e poderoso — construído sobre a UI [Fluent](https://github.com/dawid-scripts/Fluent).**
 
-[![Version](https://img.shields.io/badge/version-2.0-blueviolet?style=for-the-badge)](https://github.com/)
-[![Lua](https://img.shields.io/badge/Lua-5.1-blue?style=for-the-badge&logo=lua)](https://www.lua.org/)
-[![Platform](https://img.shields.io/badge/platform-Roblox-red?style=for-the-badge)](https://www.roblox.com/)
-[![License](https://img.shields.io/badge/license-MIT-green?style=for-the-badge)](LICENSE)
+[![Lua](https://img.shields.io/badge/Made%20with-Lua-000080?style=for-the-badge&logo=lua&logoColor=white)](https://www.lua.org/)
+[![Roblox](https://img.shields.io/badge/Platform-Roblox-FF4B4B?style=for-the-badge&logo=robloxstudio&logoColor=white)](https://www.roblox.com/)
+[![UI](https://img.shields.io/badge/UI-Fluent-1e1e2e?style=for-the-badge)](https://github.com/dawid-scripts/Fluent)
+[![License](https://img.shields.io/badge/Licen%C3%A7a-Educacional-2ea44f?style=for-the-badge)](#-aviso-legal)
+
+<sub>⚡ 8 abas · 🎯 Aimbot & Silent Aim · 🛡️ Anti-Kick/Ban · 🚀 Fly, NoClip, Speed · 👁️ ESP · 🌐 Server Hop</sub>
+
+</div>
+
+---
+
+<div align="center">
+
+### 📑 Índice
+
+[Sobre](#-sobre) ·
+[Recursos](#-recursos) ·
+[Como Usar](#-como-usar) ·
+[Compatibilidade](#-compatibilidade) ·
+[Atalhos](#-atalhos) ·
+[Aviso Legal](#-aviso-legal)
 
 </div>
 
@@ -15,178 +32,135 @@
 
 ## 📖 Sobre
 
-**DarkHUB** é um script universal para Roblox construído sobre a biblioteca [Fluent UI](https://github.com/dawid-scripts/Fluent), com foco em **funcionalidade, estabilidade e stealth**. Ele funciona na maioria dos jogos sem necessidade de configuração específica.
+O **DarkHUB Universal** é um script completo para Roblox que reúne, em uma única interface limpa e moderna, as ferramentas mais usadas no dia a dia: movimentação, visuais (ESP), combate, proteções anti-cheat, utilitários e ferramentas externas.
 
-> Todas as instâncias criadas pelo script recebem nomes gerados aleatoriamente a cada sessão, eliminando fingerprints fixos detectáveis por anti-cheats.
+A interface usa a biblioteca **Fluent**, com tema escuro (`Darker`), notificações integradas e sistema de configurações salvas.
+
+```
+🌑 DarkHUB
+   └─ Universal Script
+      ├─ 👤 Player      ├─ ⚔️ Combat     ├─ 📦 External
+      ├─ 🏃 Movement    ├─ 🌀 Fling      └─ ⚙️ Settings
+      ├─ 👁️ Visuals     ├─ 🛡️ Bypass
+```
 
 ---
 
-## ✨ Funcionalidades
+## ✨ Recursos
 
-<details>
-<summary><b>👁️ ESP — Player Visibility</b></summary>
+<table>
+<tr>
+<td width="50%" valign="top">
 
-| Feature | Descrição |
-|---|---|
-| **Enable ESP** | Highlight colorido nos personagens de todos os jogadores |
-| **Team Check** | Exclui jogadores do mesmo time do ESP |
-| **Fill Color** | Cor de preenchimento do highlight (personalizável) |
-| **Outline Color** | Cor do contorno do highlight (personalizável) |
-| **Name Tags** | Exibe o nome dos jogadores acima do personagem |
-| **Health Bar** | Barra de vida em tempo real acima de cada jogador |
+### 👤 Player
+- Teleporte para outro jogador
+- Spectate / espionar jogador
+- Lista de jogadores em tempo real
 
-</details>
+### 🏃 Movement
+- **Speed Hack** (16–300)
+- **NoClip** — atravessar paredes
+- **Fly** & **Vehicle Fly** (velocidade ajustável)
+- **Infinity Jump** & **Levitation**
+- **Click TP** — teleporte por clique
+- **TP to Spawn**
+- **Waypoints** — salvar / teleportar / deletar
+- **Anti-AFK**
 
-<details>
-<summary><b>🏃 Movement — Movimentação</b></summary>
+### 👁️ Visuals
+- **ESP** com Team Check
+- Name Tags & Health Bar
+- Cor do ESP personalizável
+- **Fullbright** · **No Fog** · **Remove Effects**
 
-| Feature | Descrição |
-|---|---|
-| **Speed Hack** | Aumenta a velocidade de caminhada (configurável de 16 a 300) |
-| **NoClip** | Atravessa paredes e objetos sólidos |
-| **Fly** | Voo livre com controles WASD + Space/Shift |
-| **Fly Speed** | Velocidade do voo (10–300) |
-| **Vehicle Fly** | Voo dentro de veículos |
-| **Infinity Jump** | Pulo infinito sem restrição de estado |
-| **Walk on Air** | Andar no ar sem cair |
-| **Anti-Ragdoll** | Desativa o estado de ragdoll |
-| **Anti-Fall Damage** | Restaura HP após queda |
-| **Click TP** | Clique no mapa para teleportar |
-| **TP to Spawn** | Teleporte direto ao spawn do mapa |
-| **Waypoints** | Salve, selecione e delete waypoints customizados |
-| **Anti-AFK** | Previne desconexão por inatividade |
+</td>
+<td width="50%" valign="top">
 
-</details>
+### ⚔️ Combat
+- **Aimbot** — FOV, suavização, parte-alvo, wall check
+- Círculo de FOV visível
+- **Silent Aim** (requer metamétodos)
+- **Triggerbot** com delay configurável
+- Team Check em todas as opções
 
-<details>
-<summary><b>🌍 World — Mundo</b></summary>
+### 🌀 Fling
+- Fling em alvo selecionado
+- **Touch Fling** & **Fling All**
+- **Anti-Fling** (proteção)
 
-| Feature | Descrição |
-|---|---|
-| **Fullbright** | Remove escuridão e torna o mapa totalmente iluminado |
-| **No Fog** | Remove névoa do ambiente |
-| **Remove Effects** | Desativa efeitos de pós-processamento |
-| **Freecam** | Câmera livre pelo mapa (independente do personagem) |
-| **Freecam Speed** | Velocidade da câmera livre (0.1–10) |
+### 🛡️ Bypass
+- **Anti-Kick & Ban**
+- **Remote Report Block**
+- **Anti-Cheat Breaker / Monitor / Scan**
+- **Fingerprint Wipe**
+- Destruir remotes de kick/ban
+- **Lag Switch**
 
-</details>
+### 📦 External
+- Infinity Yield · Dex Explorer · SimpleSpy
 
-<details>
-<summary><b>👤 Player — Utilitários do Jogador</b></summary>
+</td>
+</tr>
+</table>
 
-| Feature | Descrição |
-|---|---|
-| **Player TP** | Teleporte para qualquer jogador no servidor |
-| **Player Spy** | Mira a câmera em outro jogador para espioná-lo |
-| **Health Restore** | Restaura HP ao máximo a cada frame |
-| **Forcefield** | Campo de força invisível ao redor do personagem |
-| **Infinite Health** | MaxHealth e Health definidos como `math.huge` |
-| **Disable Dead State** | Previne o estado de morte do Humanoid |
-| **Hook TakeDamage** | Intercepta e bloqueia dano via metamétodo |
-
-</details>
-
-<details>
-<summary><b>🛡️ Bypass — Anti-Detecção</b></summary>
-
-| Feature | Descrição |
-|---|---|
-| **Fingerprint Wipe** | Apaga globals do executor, falsifica `identifyexecutor`, `checkcaller`, `iscclosure`, etc. Hookeia `loadstring` e `require` para bloquear ACs |
-| **Anti-Kick & Ban** | Bloqueia `Kick()`, `BootFromGame()`, `KickPlayer()` e FireServer com nomes de kick/ban via `__namecall` hook |
-| **Anti-Cheat Breaker** | Varre todos os serviços, desabilita scripts de AC por nome/source, destrói remotes e re-scana em intervalo aleatório (370–620 ticks) |
-| **Full Scan & Disable** | Varredura única no PlayerGui, Backpack, PlayerScripts e ReplicatedStorage |
-| **Anti-Cheat Monitor** | Monitora `DescendantAdded` e nuke automático de scripts de AC inseridos dinamicamente |
-| **Remote Report Block** | Bloqueia `FireServer`/`InvokeServer` de remotes com nomes de anti-cheat |
-| **HTTP Block** | Intercepta `GetAsync`/`PostAsync` para URLs suspeitas de AC/ban |
-| **Speed Protect** | Bloqueia mudanças não autorizadas de `WalkSpeed` via `__newindex` |
-| **Speed Spoof** | Retorna `16` para leituras de `WalkSpeed` via `__index` |
-| **NoClip Protect** | Impede re-ativação de `CanCollide` nas partes do personagem |
-| **Fly Protect** | Guard loop que reativa o fly se for desabilitado |
-| **God Protect** | Bloqueia zeragem de `Health`/`MaxHealth` via hook |
-| **Disconnect AC Signals** | Desconecta todos os signals do Humanoid/HRP que ACs usam para monitorar |
-| **Activate All Spoofs** | Ativa todos os spoofs e proteções com um clique |
-| **Lag Switch** | Ancora o HRP para simular lag de rede |
-
-</details>
-
-<details>
-<summary><b>⚔️ Fling — Arremesso de Jogadores</b></summary>
-
-| Feature | Descrição |
-|---|---|
-| **Fling Target** | Arremessa um jogador específico selecionado |
-| **Velocity Multiplier** | Multiplica a força do fling (0.1–5x) |
-| **Touch Fling** | Arremessa qualquer jogador que tocar no personagem |
-| **Fling All** | Loop automático que arremessa todos os jogadores no servidor |
-| **Anti-Fling** | Protege contra flings recebidos via `NoCollisionConstraint` + velocity cap |
-| **Velocity Limit** | Limite de velocidade para o anti-fling (20–300) |
-
-</details>
-
-<details>
-<summary><b>📦 External Tools</b></summary>
-
-| Script | Descrição |
-|---|---|
-| **Infinity Yield** | Carrega o Infinity Yield diretamente pelo menu |
-
-</details>
+### ⚙️ Settings
+Stats (Ping / FPS) · Server Info · **Rejoin** · **Server Hop** · Sistema de configurações salvas (via Fluent `InterfaceManager`).
 
 ---
 
 ## 🚀 Como Usar
 
-**1.** Abra seu executor favorito (Synapse X, KRNL, Fluxus, etc.)
-
-**2.** Cole o loadstring abaixo no executor:
+1. Abra seu executor de scripts favorito.
+2. Cole o **loadstring** abaixo no editor.
+3. Execute dentro de qualquer jogo do Roblox.
 
 ```lua
-loadstring(game:HttpGet("https://raw.githubusercontent.com/DarkModeBR/DarkHUB/main/DarkHUB.lua"))()
+loadstring(game:HttpGet("https://raw.githubusercontent.com/SEU-USUARIO/SEU-REPO/main/DarkHUB.lua"))()
 ```
 
-**3.** Execute e o menu abrirá automaticamente.
-
-**4.** Use `RightControl` para minimizar/restaurar o menu a qualquer momento.
+> 💡 Substitua `SEU-USUARIO/SEU-REPO` pelo caminho real do seu repositório no GitHub.
 
 ---
 
-## ⚙️ Requisitos
+## 🧩 Compatibilidade
 
-| Requisito | Detalhe |
-|---|---|
-| **Executor** | Qualquer executor com suporte a `getrawmetatable`, `setreadonly`, `getnamecallmethod`, `newcclosure`, `getgenv` |
-| **Plataforma** | PC (Windows) |
-| **Conexão** | Necessária para carregar a UI (Fluent) e scripts externos |
+| Recurso | Requisito |
+|--------|-----------|
+| UI / funções básicas | Qualquer executor com `HttpGet` |
+| Silent Aim · Anti-Kick/Ban · Remote Block | Executor com suporte a **metamétodos** (`hookmetamethod`, `getrawmetatable`) |
+| Proteção de GUI | `syn.protect_gui` / `gethui` (opcional) |
+| Requisições externas | `syn.request` / `http.request` / `request` (com fallback para `HttpGet`) |
 
-> ⚠️ Funções de Bypass avançadas (Fingerprint Wipe, Speed Spoof, Hook TakeDamage) requerem executor compatível com metamétodos. Executores gratuitos podem ter suporte parcial.
-
----
-
-## 🎨 Interface
-
-O DarkHUB utiliza a biblioteca **[Fluent UI](https://github.com/dawid-scripts/Fluent)** com o tema `Darker`.
-
-- Minimize/maximize com `RightControl`
-- Interface totalmente responsiva e com suporte a transparência desativada para melhor performance
-- Notificações integradas para feedback de todas as ações
+> O script detecta automaticamente os recursos disponíveis e notifica quando um executor não tem suporte a determinada função.
 
 ---
 
-## 🔒 Stealth & Anti-Detecção
+## ⌨️ Atalhos
 
-O DarkHUB implementa diversas técnicas para reduzir a detectabilidade:
+| Tecla | Ação |
+|-------|------|
+| `Right Ctrl` | Minimizar / restaurar a interface |
+| `E` (segurar) | Aim Key do Aimbot (padrão) |
 
-- **Nomes de instâncias aleatórios por sessão** — ForceField, BillboardGui, BodyVelocity e BodyGyro recebem nomes únicos gerados a cada execução
-- **Keys do `getgenv()` randomizadas** — as referências internas no ambiente global nunca têm nome fixo
-- **Jitter no scan interval** — o re-scan do breaker ocorre em intervalos variáveis (370–620 ticks) para evitar padrões temporais
-- **Proteção da GUI** — tentativa automática de mover o menu para `gethui()` / `CoreGui` com `syn.protect_gui` quando disponível
-- **HTTP Interceptor** — bloqueia requisições HTTP de scripts de detecção para servidores externos
-- **Spoof de `__tostring`** — impede identificação de hooks via inspeção do ambiente
+---
+
+## ⚠️ Aviso Legal
+
+> [!WARNING]
+> Este projeto é fornecido **apenas para fins educacionais e de estudo** sobre engenharia de UI e scripting em Lua.
+>
+> - O uso de scripts de terceiros pode violar os **Termos de Serviço do Roblox** e resultar em banimento da conta.
+> - Os scripts da aba **External** são carregados via `HttpGet` de fontes de terceiros — use por sua conta e risco.
+> - O autor **não se responsabiliza** por qualquer uso indevido, banimentos ou danos decorrentes do uso deste software.
+>
+> **Use com responsabilidade.**
 
 ---
 
 <div align="center">
 
-**Feito com 🖤 — DarkHUB Universal Script**
+Feito com 🌑 e Lua · Interface por [Fluent](https://github.com/dawid-scripts/Fluent)
+
+⭐ Se este projeto te ajudou, deixe uma estrela no repositório!
 
 </div>
